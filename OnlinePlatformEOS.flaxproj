@@ -1,0 +1,13 @@
+{
+	"Name": "OnlinePlatformEOS",
+	"Version": "1.0",
+	"Company": "My Company",
+	"Copyright": "",
+	"GameTarget": "OnlinePlatformEOSTarget",
+	"EditorTarget": "OnlinePlatformEOSEditorTarget",
+	"References": [
+		{
+			"Name": "$(EnginePath)/Flax.flaxproj"
+		}
+	]
+}
