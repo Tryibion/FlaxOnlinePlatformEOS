@@ -15,7 +15,7 @@ public class EOSSDK : DepsModule
         base.Init();
 
         LicenseType = LicenseTypes.Custom;
-        LicenseFilePath = "license";
+        LicenseFilePath = "LICENSE.txt";
         BinaryModuleName = null;
         BuildNativeCode = false;
     }
@@ -44,7 +44,7 @@ public class EOSSDK : DepsModule
             options.DependencyFiles.Add(Path.Combine(binariesFolder, "libEOSSDK-Mac-Shipping.dylib"));
             options.Libraries.Add(Path.Combine(binariesFolder, "libEOSSDK-Mac-Shipping.dylib"));
             break;
-        default: throw new InvalidPlatformException(options.Platform.Target);
+        default: break;
         }
     }
 }

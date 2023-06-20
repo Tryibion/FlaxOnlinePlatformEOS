@@ -1,0 +1,55 @@
+﻿{
+  "profiles": {
+    "FlaxEngine": {
+      "commandName": "Executable",
+      "workingDirectory": "C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject",
+      "executablePath": "Z:\\Flax\\Source\\FlaxEngine\\Binaries\\Editor\\Win64\\Development\\FlaxEditor.exe",
+      "commandLineArgs": "-project \"C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject\"",
+      "nativeDebugging": false
+    },
+    "BuildScripts": {
+      "commandName": "Executable",
+      "workingDirectory": "C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject",
+      "executablePath": "Z:\\Flax\\Source\\FlaxEngine\\Binaries\\Editor\\Win64\\Development\\FlaxEditor.exe",
+      "commandLineArgs": "-project \"C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject\"",
+      "nativeDebugging": false
+    }
+  }
+}{
+  "profiles": {
+    "TestPlugin": {
+      "commandName": "Executable",
+      "workingDirectory": "C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject",
+      "executablePath": "Z:\\Flax\\Source\\FlaxEngine\\Binaries\\Editor\\Win64\\Development\\FlaxEditor.exe",
+      "commandLineArgs": "-project \"C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject\"",
+      "nativeDebugging": false
+    }
+  }
+}{
+  "profiles": {
+    "SimpleSaveSystem": {
+      "commandName": "Executable",
+      "workingDirectory": "C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject",
+      "executablePath": "Z:\\Flax\\Source\\FlaxEngine\\Binaries\\Editor\\Win64\\Development\\FlaxEditor.exe",
+      "commandLineArgs": "-project \"C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject\"",
+      "nativeDebugging": false
+    },
+    "SimpleSaveSystemEditor": {
+      "commandName": "Executable",
+      "workingDirectory": "C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject",
+      "executablePath": "Z:\\Flax\\Source\\FlaxEngine\\Binaries\\Editor\\Win64\\Development\\FlaxEditor.exe",
+      "commandLineArgs": "-project \"C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject\"",
+      "nativeDebugging": false
+    }
+  }
+}{
+  "profiles": {
+    "OnlinePlatformEOS": {
+      "commandName": "Executable",
+      "workingDirectory": "C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject",
+      "executablePath": "Z:\\Flax\\Source\\FlaxEngine\\Binaries\\Editor\\Win64\\Development\\FlaxEditor.exe",
+      "commandLineArgs": "-project \"C:\\Users\\mrcha\\Documents\\Flax Projects\\TestingProject\"",
+      "nativeDebugging": false
+    }
+  }
+}
