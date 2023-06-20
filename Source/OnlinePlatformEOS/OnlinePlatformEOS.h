@@ -3,6 +3,7 @@
 #include "Engine/Core/Config/Settings.h"
 #include "Engine/Online/IOnlinePlatform.h"
 #include "Engine/Scripting/ScriptingObject.h"
+#include "EOSSDK/Include/eos_types.h"
 
 ///<summary>
 /// Logging Categories
@@ -100,7 +101,7 @@ API_CLASS(Sealed, Namespace="FlaxEngine.Online.EOS") class ONLINEPLATFORMEOS_API
 {
     DECLARE_SCRIPTING_TYPE(OnlinePlatformEOS);
 private:
-	class EOS_HPlatform* _hPlatform;
+	EOS_HPlatform _hPlatform = nullptr;
     
 public:
     // [IOnlinePlatform]
@@ -121,7 +122,7 @@ public:
     bool SetStat(const StringView& name, float value, User* localUser) override;
     bool GetSaveGame(const StringView& name, API_PARAM(Out) Array<byte, HeapAllocation>& data, User* localUser) override;
     bool SetSaveGame(const StringView& name, const Span<byte>& data, User* localUser) override;
-    void SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel logLevel);
+    API_FUNCTION() void SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel logLevel);
 	void CheckApplicationStatus();
 
 private:

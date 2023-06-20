@@ -47,12 +47,12 @@ This will add reference to `OnlinePlatformEOS` module on Windows/Linux/Mac platf
 
 4. Test it out!
 
-Finally you can use Steam as online platform in your game:
+Finally you can use EOS as online platform in your game:
 
 ```cs
 // C#
 using FlaxEngine.Online;
-using FlaxEngine.Online.Steam;
+using FlaxEngine.Online.EOS;
 
 var platform = platform = new OnlinePlatformEOS();
 Online.Initialize(platform);

@@ -6,9 +6,9 @@
 #include "Engine/Core/Config/GameSettings.h"
 #include "Engine/Core/Collections/Array.h"
 #include "Engine/Engine/Engine.h"
+#include "Engine/Engine/Globals.h"
 #include "Engine/Utilities/StringConverter.h"
 #if USE_EDITOR
-#include "Engine/Engine/Globals.h"
 #include "Engine/Platform/FileSystem.h"
 #include "Engine/Platform/File.h"
 #endif
@@ -91,9 +91,7 @@ bool OnlinePlatformEOS::Initialize()
 #if USE_EDITOR
     platformOptions->Flags = EOS_PF_LOADING_IN_EDITOR;
 #endif
-    String tempFilePath;
-    FileSystem::GetTempFilePath(tempFilePath);
-    platformOptions->CacheDirectory = tempFilePath.Get();
+    platformOptions->CacheDirectory = Globals::TemporaryFolder.ToStringAnsi().GetText();
     platformOptions->TickBudgetInMilliseconds = 0;
     platformOptions->RTCOptions = NULL;
     platformOptions->IntegratedPlatformOptionsContainerHandle = NULL;
@@ -109,7 +107,7 @@ bool OnlinePlatformEOS::Initialize()
         return true;
     }
 
-    Engine::MainWindow.
+    //Engine::MainWindow.
     //TODO: hook into changing EOS network status on game network status change
     Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
     return false;
@@ -117,7 +115,6 @@ bool OnlinePlatformEOS::Initialize()
 
 void OnlinePlatformEOS::Deinitialize()
 {
-
     EOS_Platform_Release(_hPlatform);
     EOS_Shutdown();
     Engine::LateUpdate.Unbind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
@@ -125,54 +122,67 @@ void OnlinePlatformEOS::Deinitialize()
 
 bool OnlinePlatformEOS::UserLogin(User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::UserLogout(User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::GetUserLoggedIn(User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::GetUser(OnlineUser& user, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>& achievements, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::UnlockAchievement(const StringView& name, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::UnlockAchievementProgress(const StringView& name, float progress, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::ResetAchievements(User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::GetStat(const StringView& name, float& value, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::SetStat(const StringView& name, float value, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::GetSaveGame(const StringView& name, Array<byte, HeapAllocation>& data, User* localUser)
 {
+    return false;
 }
 
 bool OnlinePlatformEOS::SetSaveGame(const StringView& name, const Span<byte>& data, User* localUser)
 {
+    return false;
 }
 
 void OnlinePlatformEOS::SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel logLevel)
@@ -185,9 +195,10 @@ void OnlinePlatformEOS::SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel l
 
 void OnlinePlatformEOS::CheckApplicationStatus()
 {
+    // TODO move this to only trigger on window state change.
 #if PLATFORM_WINDOWS
-    auto settings = GameSettings::Get();
-    auto windowsSettings = Content::Load<WindowsPlatformSettings>(settings->WindowsPlatform);
+    //auto settings = GameSettings::Get();
+    //auto windowsSettings = Content::Load<WindowsPlatformSettings>(settings->WindowsPlatform);
 #endif
     
     if (Engine::MainWindow->IsForegroundWindow())
@@ -198,12 +209,14 @@ void OnlinePlatformEOS::CheckApplicationStatus()
     {
         EOS_Platform_SetApplicationStatus(_hPlatform, EOS_EApplicationStatus::EOS_AS_BackgroundSuspended);
     }
+    /*
 #if PLATFORM_WINDOWS
-    else if (windowsSettings->RunInBackground)
+    else if (windowsSettings->RunInBackground && !Engine::HasFocus)
     {
         EOS_Platform_SetApplicationStatus(_hPlatform, EOS_EApplicationStatus::EOS_AS_BackgroundUnconstrained);
     }
 #endif
+*/
     else if (!Engine::HasFocus)
     {
         EOS_Platform_SetApplicationStatus(_hPlatform, EOS_EApplicationStatus::EOS_AS_BackgroundConstrained);
@@ -212,9 +225,11 @@ void OnlinePlatformEOS::CheckApplicationStatus()
 
 bool OnlinePlatformEOS::RequestCurrentStats()
 {
+    return false;
 }
 
 void OnlinePlatformEOS::OnUpdate()
 {
-    CheckApplicationStatus();
+    //CheckApplicationStatus();
+    EOS_Platform_Tick(_hPlatform);
 }
