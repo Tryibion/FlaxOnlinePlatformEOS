@@ -13,30 +13,30 @@
 #include "Engine/Platform/File.h"
 #endif
 #include <EOSSDK/Include/eos_sdk.h>
-
 #include "Engine/Engine/Time.h"
-#include "Engine/Platform/Windows/WindowsPlatformSettings.h"
 #include "Engine/Platform/Windows/WindowsWindow.h"
 #include "EOSSDK/Include/eos_logging.h"
 #include "EOSSDK/Include/eos_types.h"
+
+IMPLEMENT_GAME_SETTINGS_GETTER(EOSSettings, "EOS");
 
 extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
 {
     switch (Message->Level)
     {
     case EOS_ELogLevel::EOS_LOG_Fatal:
-        LOG(Fatal, "[EOS] [%s] %s", String(Message->Category), String(Message->Message));
+        LOG(Fatal, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
         break;
     case EOS_ELogLevel::EOS_LOG_Error:
-        LOG(Error, "[EOS] [%s] %s", String(Message->Category), String(Message->Message));
+        LOG(Error, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
         break;
     case EOS_ELogLevel::EOS_LOG_Warning:
-        LOG(Warning, "[EOS] [%s] %s", String(Message->Category), String(Message->Message));
+        LOG(Warning, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
         break;
     case EOS_ELogLevel::EOS_LOG_Info:
     case EOS_ELogLevel::EOS_LOG_Verbose: 
     case EOS_ELogLevel::EOS_LOG_VeryVerbose:
-        LOG(Info, "[EOS] [%s] %s", String(Message->Category), String(Message->Message));
+        LOG(Info, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
         break;
     default: break;
     }
@@ -49,54 +49,65 @@ OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
 
 bool OnlinePlatformEOS::Initialize()
 {
+    const auto settings = EOSSettings::Get();
+    const auto gameSettings = GameSettings::Get();
+    
     // Initialize EOS
-    EOS_InitializeOptions initOptions;
+    EOS_InitializeOptions initOptions = {};
     initOptions.ApiVersion = EOS_INITIALIZE_API_LATEST;
-    initOptions.Reserved = NULL;
-    initOptions.ProductName = "Testing";
-    initOptions.AllocateMemoryFunction = NULL;
-    initOptions.ReallocateMemoryFunction = NULL;
-    initOptions.ReleaseMemoryFunction = NULL;
-    initOptions.OverrideThreadAffinity = NULL;
+    initOptions.Reserved = nullptr;
+    initOptions.ProductName = settings->ProductName.IsEmpty() ? Globals::ProductName.ToStringAnsi().GetText() : settings->ProductName.ToStringAnsi().GetText();
+    initOptions.ProductVersion = settings->ProductVersion.ToStringAnsi().GetText();
+    initOptions.AllocateMemoryFunction = nullptr;
+    initOptions.ReallocateMemoryFunction = nullptr;
+    initOptions.ReleaseMemoryFunction = nullptr;
+    initOptions.SystemInitializeOptions = nullptr;
+    initOptions.OverrideThreadAffinity = nullptr;
 
     EOS_EResult initResult = EOS_Initialize(&initOptions);
     if (initResult != EOS_EResult::EOS_Success)
     {
-        LOG(Error, "EOS init failed. Init result: %s", *EOS_EResult_ToString(initResult));
+        LOG(Error, "EOS init failed. Init result: {0}", String(EOS_EResult_ToString(initResult)));
         return true;
     }
-
+    
     // Set Logging callback
     EOS_Logging_SetCallback(&EOSSDKLogCallback);
-
+    
     // TODO: put these options in settings in editor
-    auto* platformOptions = New<EOS_Platform_Options>();
-    platformOptions->ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
-    platformOptions->Reserved = NULL;
-    platformOptions->ProductId = "id";
-    platformOptions->SandboxId = "id";
-    platformOptions->ClientCredentials.ClientId = "id";
-    platformOptions->ClientCredentials.ClientSecret = "secret";
+    EOS_Platform_Options platformOptions = {};
+    platformOptions.ApiVersion = EOS_PLATFORM_OPTIONS_API_LATEST;
+    platformOptions.Reserved = nullptr;
+    platformOptions.ProductId = "id";
+    platformOptions.SandboxId = "id";
+    platformOptions.ClientCredentials.ClientId = "id";
+    platformOptions.ClientCredentials.ClientSecret = "secret";
     
     if (Engine::IsHeadless())
-        platformOptions->bIsServer = EOS_TRUE;
+        platformOptions.bIsServer = EOS_TRUE;
     else
-        platformOptions->bIsServer = EOS_FALSE;
+        platformOptions.bIsServer = EOS_FALSE;
 
-    platformOptions->EncryptionKey = "key";
-    platformOptions->OverrideCountryCode = "code";
-    platformOptions->OverrideLocaleCode = "code";
-    platformOptions->DeploymentId = "ID";
+    platformOptions.EncryptionKey = nullptr;
+    platformOptions.OverrideCountryCode = nullptr;
+    platformOptions.OverrideLocaleCode = nullptr;
+    platformOptions.DeploymentId = "ID";
+
+    platformOptions.Flags |= EOS_PF_WINDOWS_ENABLE_OVERLAY_OPENGL;
+#if PLATFORM_WINDOWS
+    platformOptions.Flags |= EOS_PF_WINDOWS_ENABLE_OVERLAY_D3D10 | EOS_PF_WINDOWS_ENABLE_OVERLAY_D3D9 | EOS_PF_WINDOWS_ENABLE_OVERLAY_OPENGL;
+#endif
 
 #if USE_EDITOR
-    platformOptions->Flags = EOS_PF_LOADING_IN_EDITOR;
+    platformOptions.Flags |= EOS_PF_LOADING_IN_EDITOR;
 #endif
-    platformOptions->CacheDirectory = Globals::TemporaryFolder.ToStringAnsi().GetText();
-    platformOptions->TickBudgetInMilliseconds = 0;
-    platformOptions->RTCOptions = NULL;
-    platformOptions->IntegratedPlatformOptionsContainerHandle = NULL;
+    
+    platformOptions.CacheDirectory = Globals::TemporaryFolder.ToStringAnsi().GetText();
+    platformOptions.TickBudgetInMilliseconds = 0;
+    platformOptions.RTCOptions = nullptr;
+    platformOptions.IntegratedPlatformOptionsContainerHandle = nullptr;
 
-    _hPlatform = EOS_Platform_Create(platformOptions);
+    _hPlatform = EOS_Platform_Create(&platformOptions);
 
     // Restart with Epic Launcher if not already launched
     auto checkResult = EOS_Platform_CheckForLauncherAndRestart(_hPlatform);
@@ -106,7 +117,7 @@ bool OnlinePlatformEOS::Initialize()
         Engine::RequestExit(0);
         return true;
     }
-
+    
     //Engine::MainWindow.
     //TODO: hook into changing EOS network status on game network status change
     Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);

@@ -94,6 +94,31 @@ API_ENUM() enum class EOSLogLevel
 	VeryVerbose = 600
 };
 
+/// <summary>
+/// The settings for EOS online platform.
+/// </summary>
+API_CLASS(Namespace="FlaxEngine.Online.EOS") class ONLINEPLATFORMEOS_API EOSSettings : public SettingsBase
+{
+	API_AUTO_SERIALIZATION();
+	DECLARE_SCRIPTING_TYPE_NO_SPAWN(EOSSettings);
+	DECLARE_SETTINGS_GETTER(EOSSettings);
+public:
+	/* TODO: may need this for steam interaction at some point
+	// App ID of the game.
+	API_FIELD(Attributes="EditorOrder(0)")
+	uint32 AppId = 0;
+	*/
+	API_FIELD() String ProductName;
+	API_FIELD() String ProductVersion;
+	API_FIELD() String ProductID;
+	API_FIELD() String SandboxID;
+	API_FIELD() String DeploymentID;
+
+	API_FIELD() String DefaultClientID;
+	API_FIELD() String DefaultClientSecret;
+	API_FIELD() String EncryptionKey;
+};
+
 ///<summary>
 /// The online platform implementation for EOS.
 ///</summary>
