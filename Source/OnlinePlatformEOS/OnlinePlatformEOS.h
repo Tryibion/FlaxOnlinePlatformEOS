@@ -3,7 +3,9 @@
 #include "Engine/Core/Config/Settings.h"
 #include "Engine/Online/IOnlinePlatform.h"
 #include "Engine/Scripting/ScriptingObject.h"
+#include "EOSSDK/Include/eos_auth_types.h"
 #include "EOSSDK/Include/eos_types.h"
+#include "EOSSDK/Include/eos_userinfo_types.h"
 
 ///<summary>
 /// Logging Categories
@@ -126,7 +128,9 @@ API_CLASS(Sealed, Namespace="FlaxEngine.Online.EOS") class ONLINEPLATFORMEOS_API
 {
     DECLARE_SCRIPTING_TYPE(OnlinePlatformEOS);
 private:
-	EOS_HPlatform _hPlatform = nullptr;
+	EOS_HPlatform _platform = nullptr;
+	EOS_HUserInfo _userInfo = nullptr;
+	EOS_HAuth _auth = nullptr;
     
 public:
     // [IOnlinePlatform]
