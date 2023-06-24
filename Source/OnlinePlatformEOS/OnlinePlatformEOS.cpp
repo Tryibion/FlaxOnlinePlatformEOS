@@ -44,6 +44,39 @@ extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
     }
 }
 
+void* EOS_MEMORY_CALL EOSAllocateMemory(size_t sizeInBytes, size_t alignment)
+{
+    return Allocator::Allocate(sizeInBytes, alignment);
+}
+
+void* Realloc(void* ptr, uint64 newSize, uint64 alignment)
+{
+    if (newSize == 0)
+    {
+        Allocator::Free(ptr);
+        return nullptr;
+    }
+    if (!ptr)
+        return Allocator::Allocate(newSize, alignment);
+    void* result = Allocator::Allocate(newSize, alignment);
+    if (result)
+    {
+        Platform::MemoryCopy(result, ptr, newSize);
+        Allocator::Free(ptr);
+    }
+    return result;
+}
+
+void* EOS_MEMORY_CALL EOSReallocateMemory(void* pointer, size_t sizeInBytes, size_t alignment)
+{
+    return Realloc(pointer, sizeInBytes, alignment); // TODO: if this ever gets put in engine, use that function
+}
+
+void EOS_MEMORY_CALL EOSReleaseMemory(void* pointer)
+{
+    Allocator::Free(pointer);
+}
+
 OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
     : ScriptingObject(params)
 {
@@ -66,9 +99,9 @@ bool OnlinePlatformEOS::Initialize()
     const StringAsANSI<> productVersion(settings->ProductVersion.Get(), settings->ProductVersion.Length());
     initOptions.ProductName = productName.Get();
     initOptions.ProductVersion = productVersion.Get();
-    initOptions.AllocateMemoryFunction = nullptr;
-    initOptions.ReallocateMemoryFunction = nullptr;
-    initOptions.ReleaseMemoryFunction = nullptr;
+    initOptions.AllocateMemoryFunction = &EOSAllocateMemory;
+    initOptions.ReallocateMemoryFunction = &EOSReallocateMemory;
+    initOptions.ReleaseMemoryFunction = &EOSReleaseMemory;
     initOptions.SystemInitializeOptions = nullptr;
     initOptions.OverrideThreadAffinity = nullptr;
 
@@ -81,6 +114,7 @@ bool OnlinePlatformEOS::Initialize()
     
     // Set Logging callback
     EOS_Logging_SetCallback(&EOSSDKLogCallback);
+    SetEOSLogLevel(EOSLogCategory::AllCategories, EOSLogLevel::VeryVerbose); // TODO: disable once released
     
     // TODO: put these options in settings in editor
     EOS_Platform_Options platformOptions = {};
@@ -102,7 +136,7 @@ bool OnlinePlatformEOS::Initialize()
     else
         platformOptions.bIsServer = EOS_FALSE;
 
-    platformOptions.EncryptionKey = "1111111111111111111111111111111111111111111111111111111111111111";
+    platformOptions.EncryptionKey = "0"; //"1111111111111111111111111111111111111111111111111111111111111111";
     platformOptions.OverrideCountryCode = nullptr;
     platformOptions.OverrideLocaleCode = nullptr;
     platformOptions.Flags = 0;
@@ -121,8 +155,10 @@ bool OnlinePlatformEOS::Initialize()
     platformOptions.TickBudgetInMilliseconds = 0;
     platformOptions.RTCOptions = nullptr;
     platformOptions.IntegratedPlatformOptionsContainerHandle = nullptr;
-    
+
     _platform = EOS_Platform_Create(&platformOptions);
+    EOS_Platform_SetApplicationStatus(_platform, EOS_EApplicationStatus::EOS_AS_Foreground);
+    
 /*
     // Restart with Epic Launcher if not already launched
     auto checkResult = EOS_Platform_CheckForLauncherAndRestart(_hPlatform);
@@ -133,9 +169,15 @@ bool OnlinePlatformEOS::Initialize()
         return true;
     }
 */
-    //EOS_Connect_LoginOptions loginOptions = {};
+    _connect = EOS_Platform_GetConnectInterface(_platform);
     _auth = EOS_Platform_GetAuthInterface(_platform);
     _userInfo = EOS_Platform_GetUserInfoInterface(_platform);
+    _achievements = EOS_Platform_GetAchievementsInterface(_platform);
+    _stats = EOS_Platform_GetStatsInterface(_platform);
+    _friends = EOS_Platform_GetFriendsInterface(_platform);
+    _leaderboards = EOS_Platform_GetLeaderboardsInterface(_platform);
+     _playerDataStorage = EOS_Platform_GetPlayerDataStorageInterface(_platform);
+    
     /*
     EOS_Connect_LoginOptions connectLogin = {};
     connectLogin.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
@@ -144,7 +186,7 @@ bool OnlinePlatformEOS::Initialize()
     connectCreds.Type = EOS_EExternalCredentialType::EOS_ECT_EPIC_ID_TOKEN;
     connectLogin.Credentials =&connectCreds;
     */
-    //Engine::MainWindow.
+    
     //TODO: hook into changing EOS network status on game network status change
     Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
     return false;
@@ -236,6 +278,9 @@ void OnlinePlatformEOS::SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel l
 
 void OnlinePlatformEOS::CheckApplicationStatus()
 {
+    if (!_platform || Engine::ShouldExit())
+        return;
+
     auto status = EOS_Platform_GetApplicationStatus(_platform);
     if (Engine::MainWindow->IsForegroundWindow() && status != EOS_EApplicationStatus::EOS_AS_Foreground)
     {
@@ -258,6 +303,6 @@ bool OnlinePlatformEOS::RequestCurrentStats()
 
 void OnlinePlatformEOS::OnUpdate()
 {
-    CheckApplicationStatus();
     EOS_Platform_Tick(_platform);
+    CheckApplicationStatus();
 }

@@ -3,7 +3,13 @@
 #include "Engine/Core/Config/Settings.h"
 #include "Engine/Online/IOnlinePlatform.h"
 #include "Engine/Scripting/ScriptingObject.h"
+#include "EOSSDK/Include/eos_achievements_types.h"
 #include "EOSSDK/Include/eos_auth_types.h"
+#include "EOSSDK/Include/eos_connect_types.h"
+#include "EOSSDK/Include/eos_friends_types.h"
+#include "EOSSDK/Include/eos_leaderboards_types.h"
+#include "EOSSDK/Include/eos_playerdatastorage_types.h"
+#include "EOSSDK/Include/eos_stats_types.h"
 #include "EOSSDK/Include/eos_types.h"
 #include "EOSSDK/Include/eos_userinfo_types.h"
 
@@ -131,6 +137,12 @@ private:
 	EOS_HPlatform _platform = nullptr;
 	EOS_HUserInfo _userInfo = nullptr;
 	EOS_HAuth _auth = nullptr;
+	EOS_HAchievements _achievements = nullptr;
+	EOS_HStats _stats = nullptr;
+	EOS_HFriends _friends = nullptr;
+	EOS_HConnect _connect = nullptr;
+	EOS_HLeaderboards _leaderboards = nullptr;
+	EOS_HPlayerDataStorage _playerDataStorage = nullptr;
     
 public:
     // [IOnlinePlatform]
