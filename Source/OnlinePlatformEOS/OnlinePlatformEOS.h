@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "Engine/Core/Collections/Array.h"
 #include "Engine/Core/Config/Settings.h"
 #include "Engine/Online/IOnlinePlatform.h"
 #include "Engine/Scripting/ScriptingObject.h"
@@ -134,16 +135,17 @@ API_CLASS(Sealed, Namespace="FlaxEngine.Online.EOS") class ONLINEPLATFORMEOS_API
 {
     DECLARE_SCRIPTING_TYPE(OnlinePlatformEOS);
 private:
-	EOS_HPlatform _platform = nullptr;
-	EOS_HUserInfo _userInfo = nullptr;
-	EOS_HAuth _auth = nullptr;
-	EOS_HAchievements _achievements = nullptr;
-	EOS_HStats _stats = nullptr;
-	EOS_HFriends _friends = nullptr;
-	EOS_HConnect _connect = nullptr;
-	EOS_HLeaderboards _leaderboards = nullptr;
-	EOS_HPlayerDataStorage _playerDataStorage = nullptr;
-    
+	static EOS_HPlatform _platformInterface;
+	static EOS_HUserInfo _userInfoInterface;
+	static EOS_HAuth _authInterface;
+	static EOS_HAchievements _achievementsInterface;
+	static EOS_HStats _statsInterface;
+	static EOS_HFriends _friendsInterface;
+	static EOS_HConnect _connectInterface;
+	static EOS_HLeaderboards _leaderboardsInterface;
+	static EOS_HPlayerDataStorage _playerDataStorageInterface;
+    static Array<EOS_ProductUserId, HeapAllocation> _productUserIDs;
+	
 public:
     // [IOnlinePlatform]
     bool Initialize() override;
@@ -169,4 +171,7 @@ public:
 private:
     bool RequestCurrentStats();
     void OnUpdate();
+	static void EOS_CALL OnLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
+	static void EOS_CALL OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data);
+	static void EOS_CALL OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data);
 };

@@ -8,6 +8,7 @@
 #include "Engine/Engine/Engine.h"
 #include "Engine/Engine/Globals.h"
 #include "Engine/Utilities/StringConverter.h"
+#include "Engine/Scripting/Enums.h"
 #if USE_EDITOR
 #include "Engine/Platform/FileSystem.h"
 #include "Engine/Platform/File.h"
@@ -16,11 +17,23 @@
 #include "Engine/Engine/Time.h"
 #include "Engine/Platform/Base/UserBase.h"
 #include "Engine/Platform/Windows/WindowsWindow.h"
+#include "Engine/Scripting/ManagedCLR/MUtils.h"
+#include "EOSSDK/Include/eos_auth.h"
 #include "EOSSDK/Include/eos_logging.h"
 #include "EOSSDK/Include/eos_types.h"
 #include "EOSSDK/Include/eos_ui.h"
 
 IMPLEMENT_GAME_SETTINGS_GETTER(EOSSettings, "EOS");
+EOS_HPlatform OnlinePlatformEOS::_platformInterface = nullptr;
+EOS_HUserInfo OnlinePlatformEOS::_userInfoInterface = nullptr;
+EOS_HAuth OnlinePlatformEOS::_authInterface = nullptr;
+EOS_HAchievements OnlinePlatformEOS::_achievementsInterface = nullptr;
+EOS_HStats OnlinePlatformEOS::_statsInterface = nullptr;
+EOS_HFriends OnlinePlatformEOS::_friendsInterface = nullptr;
+EOS_HConnect OnlinePlatformEOS::_connectInterface = nullptr;
+EOS_HLeaderboards OnlinePlatformEOS::_leaderboardsInterface = nullptr;
+EOS_HPlayerDataStorage OnlinePlatformEOS::_playerDataStorageInterface = nullptr;
+Array<EOS_ProductUserId, HeapAllocation> OnlinePlatformEOS::_productUserIDs;
 
 extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
 {
@@ -42,6 +55,7 @@ extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
         break;
     default: break;
     }
+    
 }
 
 void* EOS_MEMORY_CALL EOSAllocateMemory(size_t sizeInBytes, size_t alignment)
@@ -75,6 +89,41 @@ void* EOS_MEMORY_CALL EOSReallocateMemory(void* pointer, size_t sizeInBytes, siz
 void EOS_MEMORY_CALL EOSReleaseMemory(void* pointer)
 {
     Allocator::Free(pointer);
+}
+
+void OnlinePlatformEOS::OnLoginComplete(const EOS_Connect_LoginCallbackInfo* data)
+{
+    if (data->ResultCode == EOS_EResult::EOS_InvalidUser)
+    {
+        EOS_Connect_CreateUserOptions options = {};
+        options.ApiVersion = EOS_CONNECT_CREATEUSER_API_LATEST;
+        options.ContinuanceToken = data->ContinuanceToken;
+        EOS_Connect_CreateUser(_connectInterface, &options, nullptr, &OnlinePlatformEOS::OnCreateUserComplete);
+    }
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        return;
+    }
+    
+    _productUserIDs.AddUnique(data->LocalUserId);
+}
+
+void OnlinePlatformEOS::OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        return;
+    }
+    _productUserIDs.AddUnique(data->LocalUserId);
+}
+
+void OnlinePlatformEOS::OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to create device ID: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+        return;
+    }
 }
 
 OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
@@ -156,8 +205,8 @@ bool OnlinePlatformEOS::Initialize()
     platformOptions.RTCOptions = nullptr;
     platformOptions.IntegratedPlatformOptionsContainerHandle = nullptr;
 
-    _platform = EOS_Platform_Create(&platformOptions);
-    EOS_Platform_SetApplicationStatus(_platform, EOS_EApplicationStatus::EOS_AS_Foreground);
+    _platformInterface = EOS_Platform_Create(&platformOptions);
+    EOS_Platform_SetApplicationStatus(_platformInterface, EOS_EApplicationStatus::EOS_AS_Foreground);
     
 /*
     // Restart with Epic Launcher if not already launched
@@ -169,23 +218,40 @@ bool OnlinePlatformEOS::Initialize()
         return true;
     }
 */
-    _connect = EOS_Platform_GetConnectInterface(_platform);
-    _auth = EOS_Platform_GetAuthInterface(_platform);
-    _userInfo = EOS_Platform_GetUserInfoInterface(_platform);
-    _achievements = EOS_Platform_GetAchievementsInterface(_platform);
-    _stats = EOS_Platform_GetStatsInterface(_platform);
-    _friends = EOS_Platform_GetFriendsInterface(_platform);
-    _leaderboards = EOS_Platform_GetLeaderboardsInterface(_platform);
-     _playerDataStorage = EOS_Platform_GetPlayerDataStorageInterface(_platform);
+    _connectInterface = EOS_Platform_GetConnectInterface(_platformInterface);
+    _authInterface = EOS_Platform_GetAuthInterface(_platformInterface);
+    _userInfoInterface = EOS_Platform_GetUserInfoInterface(_platformInterface);
+    _achievementsInterface = EOS_Platform_GetAchievementsInterface(_platformInterface);
+    _statsInterface = EOS_Platform_GetStatsInterface(_platformInterface);
+    _friendsInterface = EOS_Platform_GetFriendsInterface(_platformInterface);
+    _leaderboardsInterface = EOS_Platform_GetLeaderboardsInterface(_platformInterface);
+    _playerDataStorageInterface = EOS_Platform_GetPlayerDataStorageInterface(_platformInterface);
     
-    /*
-    EOS_Connect_LoginOptions connectLogin = {};
-    connectLogin.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+    _productUserIDs.Clear();
+    
+    // Create Device ID
+    EOS_Connect_CreateDeviceIdOptions deviceIDOptions = {};
+    deviceIDOptions.ApiVersion = EOS_CONNECT_CREATEDEVICEID_API_LATEST;
+    auto deviceIdentifier = String::Format(TEXT("{0} {1} {2}"), ScriptingEnum::ToString<PlatformType>(Platform::GetPlatformType()), Platform::GetComputerName(), Platform::GetUniqueDeviceId().ToString());
+    const StringAsANSI<> deviceIDIdentifier(deviceIdentifier.Get(), deviceIdentifier.Length());
+    deviceIDOptions.DeviceModel = deviceIDIdentifier.Get();
+    EOS_Connect_CreateDeviceId(_connectInterface, &deviceIDOptions, nullptr, &OnlinePlatformEOS::OnCreateDeviceIDComplete);
+
+    // Initial login with device
+    EOS_Connect_LoginOptions connectLoginOptions = {};
+    connectLoginOptions.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
     EOS_Connect_Credentials connectCreds = {};
     connectCreds.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
-    connectCreds.Type = EOS_EExternalCredentialType::EOS_ECT_EPIC_ID_TOKEN;
-    connectLogin.Credentials =&connectCreds;
-    */
+    connectCreds.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+    //connectCreds.Token = "jwt token"; // TODO: figure out how to get this...
+    connectCreds.Token = nullptr;
+    connectLoginOptions.Credentials = &connectCreds;
+    EOS_Connect_UserLoginInfo userLoginInfo = {};
+    userLoginInfo.ApiVersion = EOS_CONNECT_USERLOGININFO_API_LATEST;
+    const StringAsANSI<> computerName(Platform::GetComputerName().Get(), Platform::GetComputerName().Length());
+    userLoginInfo.DisplayName = computerName.Get();
+    connectLoginOptions.UserLoginInfo = &userLoginInfo;
+    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnLoginComplete);
     
     //TODO: hook into changing EOS network status on game network status change
     Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
@@ -194,8 +260,18 @@ bool OnlinePlatformEOS::Initialize()
 
 void OnlinePlatformEOS::Deinitialize()
 {
+    _productUserIDs.Clear();
+    _platformInterface = nullptr;
+    _userInfoInterface = nullptr;
+    _authInterface = nullptr;
+    _achievementsInterface = nullptr;
+    _statsInterface = nullptr;
+    _friendsInterface = nullptr;
+    _connectInterface = nullptr;
+    _leaderboardsInterface = nullptr;
+    _playerDataStorageInterface = nullptr;
     Engine::LateUpdate.Unbind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
-    EOS_Platform_Release(_platform);
+    EOS_Platform_Release(_platformInterface);
     EOS_Shutdown();
 }
 
@@ -278,22 +354,24 @@ void OnlinePlatformEOS::SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel l
 
 void OnlinePlatformEOS::CheckApplicationStatus()
 {
-    if (!_platform || Engine::ShouldExit())
+    if (!_platformInterface || Engine::ShouldExit())
         return;
 
-    auto status = EOS_Platform_GetApplicationStatus(_platform);
+    auto status = EOS_Platform_GetApplicationStatus(_platformInterface);
     if (Engine::MainWindow->IsForegroundWindow() && status != EOS_EApplicationStatus::EOS_AS_Foreground)
     {
-        EOS_Platform_SetApplicationStatus(_platform, EOS_EApplicationStatus::EOS_AS_Foreground);
+        EOS_Platform_SetApplicationStatus(_platformInterface, EOS_EApplicationStatus::EOS_AS_Foreground);
     }
     else if (Time::GetGamePaused() && !Engine::HasFocus && status != EOS_EApplicationStatus::EOS_AS_BackgroundSuspended)
     {
-        EOS_Platform_SetApplicationStatus(_platform, EOS_EApplicationStatus::EOS_AS_BackgroundSuspended);
+        EOS_Platform_SetApplicationStatus(_platformInterface, EOS_EApplicationStatus::EOS_AS_BackgroundSuspended);
     }
+    /*
     else if (!Engine::HasFocus && status != EOS_EApplicationStatus::EOS_AS_BackgroundConstrained)
     {
-        EOS_Platform_SetApplicationStatus(_platform, EOS_EApplicationStatus::EOS_AS_BackgroundConstrained);
+        EOS_Platform_SetApplicationStatus(_platformInterface, EOS_EApplicationStatus::EOS_AS_BackgroundConstrained);
     }
+    */
 }
 
 bool OnlinePlatformEOS::RequestCurrentStats()
@@ -303,6 +381,6 @@ bool OnlinePlatformEOS::RequestCurrentStats()
 
 void OnlinePlatformEOS::OnUpdate()
 {
-    EOS_Platform_Tick(_platform);
+    EOS_Platform_Tick(_platformInterface);
     CheckApplicationStatus();
 }
