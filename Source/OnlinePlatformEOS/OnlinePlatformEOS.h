@@ -117,15 +117,15 @@ public:
 	API_FIELD(Attributes="EditorOrder(0)")
 	uint32 AppId = 0;
 	*/
-	API_FIELD() String ProductName;
-	API_FIELD() String ProductVersion;
-	API_FIELD() String ProductID;
-	API_FIELD() String SandboxID;
-	API_FIELD() String DeploymentID;
+	API_FIELD() StringAnsi ProductName;
+	API_FIELD() StringAnsi ProductVersion;
+	API_FIELD() StringAnsi ProductID;
+	API_FIELD() StringAnsi SandboxID;
+	API_FIELD() StringAnsi DeploymentID;
 
-	API_FIELD() String DefaultClientID;
-	API_FIELD() String DefaultClientSecret;
-	API_FIELD() String EncryptionKey;
+	API_FIELD() StringAnsi DefaultClientID;
+	API_FIELD() StringAnsi DefaultClientSecret;
+	API_FIELD() StringAnsi EncryptionKey;
 };
 
 ///<summary>
@@ -145,6 +145,10 @@ private:
 	static EOS_HLeaderboards _leaderboardsInterface;
 	static EOS_HPlayerDataStorage _playerDataStorageInterface;
     static Array<EOS_ProductUserId, HeapAllocation> _productUserIDs;
+	static EOS_EpicAccountId _accountID;
+	
+	static bool _friendsQueryComplete;
+	static bool _friendsQueryFailed;
 	
 public:
     // [IOnlinePlatform]
@@ -174,4 +178,6 @@ private:
 	static void EOS_CALL OnLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
 	static void EOS_CALL OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data);
 	static void EOS_CALL OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data);
+	static void EOS_CALL OnAuthLoginComplete(const EOS_Auth_LoginCallbackInfo* data);
+	static void EOS_CALL OnQueryFriendsComplete( const EOS_Friends_QueryFriendsCallbackInfo* data);
 };
