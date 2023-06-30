@@ -54,7 +54,7 @@ Finally you can use EOS as online platform in your game:
 using FlaxEngine.Online;
 using FlaxEngine.Online.EOS;
 
-var platform = platform = new OnlinePlatformEOS();
+var platform = new OnlinePlatformEOS();
 Online.Initialize(platform);
 ```
 
