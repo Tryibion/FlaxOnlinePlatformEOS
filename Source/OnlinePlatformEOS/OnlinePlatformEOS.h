@@ -149,6 +149,8 @@ private:
 	
 	static bool _friendsQueryComplete;
 	static bool _friendsQueryFailed;
+	static bool _userInfoQueryComplete;
+	static bool _userInfoQueryFailed;
 	
 public:
     // [IOnlinePlatform]
@@ -179,5 +181,6 @@ private:
 	static void EOS_CALL OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data);
 	static void EOS_CALL OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data);
 	static void EOS_CALL OnAuthLoginComplete(const EOS_Auth_LoginCallbackInfo* data);
-	static void EOS_CALL OnQueryFriendsComplete( const EOS_Friends_QueryFriendsCallbackInfo* data);
+	static void EOS_CALL OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCallbackInfo* data);
+	static void EOS_CALL OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data);
 };

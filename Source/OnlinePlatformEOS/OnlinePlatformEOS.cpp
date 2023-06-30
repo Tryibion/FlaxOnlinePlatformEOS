@@ -23,6 +23,7 @@
 #include "EOSSDK/Include/eos_logging.h"
 #include "EOSSDK/Include/eos_types.h"
 #include "EOSSDK/Include/eos_ui.h"
+#include "EOSSDK/Include/eos_userinfo.h"
 
 IMPLEMENT_GAME_SETTINGS_GETTER(EOSSettings, "EOS");
 EOS_HPlatform OnlinePlatformEOS::_platformInterface = nullptr;
@@ -39,6 +40,8 @@ Array<EOS_ProductUserId, HeapAllocation> OnlinePlatformEOS::_productUserIDs;
 
 bool OnlinePlatformEOS::_friendsQueryComplete = false;
 bool OnlinePlatformEOS::_friendsQueryFailed = false;
+bool OnlinePlatformEOS::_userInfoQueryComplete = false;
+bool OnlinePlatformEOS::_userInfoQueryFailed = false;
 
 extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
 {
@@ -77,7 +80,7 @@ void* Realloc(void* ptr, uint64 newSize, uint64 alignment)
     }
     if (!ptr)
         return Allocator::Allocate(newSize, alignment);
-    void* result = Allocator::Allocate(newSize, alignment);
+    void* result = Allocator::Allocate(newSize * 2, alignment);
     if (result)
     {
         Platform::MemoryCopy(result, ptr, newSize);
@@ -174,6 +177,18 @@ void OnlinePlatformEOS::OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCal
     _friendsQueryComplete = true;
 }
 
+void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to query user info: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+        _userInfoQueryFailed = true;
+        return;
+    }
+
+    _userInfoQueryComplete = true;
+}
+
 OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
     : ScriptingObject(params)
 {
@@ -194,9 +209,9 @@ bool OnlinePlatformEOS::Initialize()
     initOptions.Reserved = nullptr;
     initOptions.ProductName = settings->ProductName.Get();
     initOptions.ProductVersion = settings->ProductVersion.Get();
-    initOptions.AllocateMemoryFunction = &EOSAllocateMemory;
-    initOptions.ReallocateMemoryFunction = &EOSReallocateMemory;
-    initOptions.ReleaseMemoryFunction = &EOSReleaseMemory;
+    initOptions.AllocateMemoryFunction = nullptr;//&EOSAllocateMemory;
+    initOptions.ReallocateMemoryFunction = nullptr;// &EOSReallocateMemory;
+    initOptions.ReleaseMemoryFunction = nullptr; //&EOSReleaseMemory;
     initOptions.SystemInitializeOptions = nullptr;
     initOptions.OverrideThreadAffinity = nullptr;
 
@@ -206,7 +221,7 @@ bool OnlinePlatformEOS::Initialize()
         LOG(Error, "EOS init failed. Init result: {0}", String(EOS_EResult_ToString(initResult)));
         return true;
     }
-    LOG(Error, "Command line args: {0}", Engine::GetCommandLine());
+
     // Set Logging callback
     EOS_Logging_SetCallback(&EOSSDKLogCallback);
     SetEOSLogLevel(EOSLogCategory::AllCategories, EOSLogLevel::VeryVerbose); // TODO: disable once released
@@ -265,7 +280,7 @@ bool OnlinePlatformEOS::Initialize()
     _playerDataStorageInterface = EOS_Platform_GetPlayerDataStorageInterface(_platformInterface);
     
     _productUserIDs.Clear();
-
+    /*
     // Let Epic Launcher pass auth
     if (!Engine::GetCommandLine().IsEmpty())
     {
@@ -307,7 +322,8 @@ bool OnlinePlatformEOS::Initialize()
             EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
         }
     }
-    /*
+    */
+    
     // Account portal auth
     EOS_Auth_Credentials Credentials = {};
     Credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
@@ -319,7 +335,7 @@ bool OnlinePlatformEOS::Initialize()
     LoginOptions.Credentials = &Credentials;
 
     EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
-    */
+
     /*
     // Create Device ID
     EOS_Connect_CreateDeviceIdOptions deviceIDOptions = {};
@@ -393,6 +409,7 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
 {
     if (!_platformInterface || !_accountID)
     {
+        LOG(Error, "Get Friends Failed 1");
         return false;
     }
     EOS_Friends_QueryFriendsOptions queryOptions = {};
@@ -401,8 +418,10 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
 
     EOS_Friends_QueryFriends(_friendsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryFriendsComplete);
 
+    // Wait for Query complete
     while (!_friendsQueryComplete)
     {
+        LOG(Error, "Querying friends");
         if (_friendsQueryFailed)
         {
             _friendsQueryFailed = false;
@@ -421,8 +440,41 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
         indexOptions.Index = i;
         indexOptions.LocalUserId = _accountID;
         auto friendsAccount = EOS_Friends_GetFriendAtIndex(_friendsInterface, &indexOptions);
-        // query friends info
+
+        EOS_UserInfo_QueryUserInfoOptions queryUserOptions = {};
+        queryUserOptions.ApiVersion = EOS_USERINFO_QUERYUSERINFO_API_LATEST;
+        queryUserOptions.LocalUserId = _accountID;
+        queryUserOptions.TargetUserId = friendsAccount;
+        EOS_UserInfo_QueryUserInfo(_userInfoInterface, &queryUserOptions, nullptr, &OnlinePlatformEOS::OnQueryUserInfoComplete);
+        // Wait for Query complete
+        while (!_userInfoQueryComplete)
+        {
+            LOG(Error, "Querying friends info");
+            if (_userInfoQueryFailed)
+            {
+                _userInfoQueryFailed = false;
+                continue;
+            }
+        }
+        _userInfoQueryComplete = false;
+        EOS_UserInfo_CopyUserInfoOptions copyUserOptions = {};
+        copyUserOptions.ApiVersion = EOS_USERINFO_COPYUSERINFO_API_LATEST;
+        copyUserOptions.LocalUserId = _accountID;
+        copyUserOptions.TargetUserId = friendsAccount;
+        EOS_UserInfo* friendInfo;
+        EOS_UserInfo_CopyUserInfo(_userInfoInterface, &copyUserOptions, &friendInfo);
+        OnlineUser friendOnlineUser;
+        char epicAccountIdString[EOS_EPICACCOUNTID_MAX_LENGTH + 1];
+        int32 epicAccountIdStringLength;
+        auto result = EOS_EpicAccountId_ToString(friendInfo->UserId, epicAccountIdString, &epicAccountIdStringLength);
+        if (result != EOS_EResult::EOS_Success)
+        {
+            continue;
+        }
+        LOG(Info, "User found: {0}", *epicAccountIdString);
+        
     }
+    LOG(Error, "Get Friends Done");
     
     return false;
 }
