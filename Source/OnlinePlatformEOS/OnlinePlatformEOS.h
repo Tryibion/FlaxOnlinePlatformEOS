@@ -145,12 +145,8 @@ private:
 	static EOS_HLeaderboards _leaderboardsInterface;
 	static EOS_HPlayerDataStorage _playerDataStorageInterface;
     static Array<EOS_ProductUserId, HeapAllocation> _productUserIDs;
+	static EOS_ProductUserId _productUserId;
 	static EOS_EpicAccountId _accountID;
-	
-	static bool _friendsQueryComplete;
-	static bool _friendsQueryFailed;
-	static bool _userInfoQueryComplete;
-	static bool _userInfoQueryFailed;
 	
 public:
     // [IOnlinePlatform]
@@ -177,10 +173,11 @@ public:
 private:
     bool RequestCurrentStats();
     void OnUpdate();
-	static void EOS_CALL OnLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
+	static void EOS_CALL OnConnectLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
 	static void EOS_CALL OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data);
 	static void EOS_CALL OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data);
 	static void EOS_CALL OnAuthLoginComplete(const EOS_Auth_LoginCallbackInfo* data);
 	static void EOS_CALL OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCallbackInfo* data);
 	static void EOS_CALL OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data);
+	static void EOS_CALL OnQueryAchievementDefinitionsComplete(const EOS_Achievements_OnQueryDefinitionsCompleteCallbackInfo* data);
 };

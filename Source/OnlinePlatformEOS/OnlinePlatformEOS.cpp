@@ -18,6 +18,8 @@
 #include "Engine/Platform/Base/UserBase.h"
 #include "Engine/Platform/Windows/WindowsWindow.h"
 #include "Engine/Scripting/ManagedCLR/MUtils.h"
+#include "Engine/Threading/JobSystem.h"
+#include "EOSSDK/Include/eos_achievements.h"
 #include "EOSSDK/Include/eos_auth.h"
 #include "EOSSDK/Include/eos_friends.h"
 #include "EOSSDK/Include/eos_logging.h"
@@ -36,12 +38,8 @@ EOS_HConnect OnlinePlatformEOS::_connectInterface = nullptr;
 EOS_HLeaderboards OnlinePlatformEOS::_leaderboardsInterface = nullptr;
 EOS_HPlayerDataStorage OnlinePlatformEOS::_playerDataStorageInterface = nullptr;
 EOS_EpicAccountId OnlinePlatformEOS::_accountID = nullptr;
+EOS_ProductUserId OnlinePlatformEOS::_productUserId = nullptr;
 Array<EOS_ProductUserId, HeapAllocation> OnlinePlatformEOS::_productUserIDs;
-
-bool OnlinePlatformEOS::_friendsQueryComplete = false;
-bool OnlinePlatformEOS::_friendsQueryFailed = false;
-bool OnlinePlatformEOS::_userInfoQueryComplete = false;
-bool OnlinePlatformEOS::_userInfoQueryFailed = false;
 
 extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
 {
@@ -100,10 +98,11 @@ extern "C" void EOS_MEMORY_CALL EOSReleaseMemory(void* pointer)
     Allocator::Free(pointer);
 }
 
-void OnlinePlatformEOS::OnLoginComplete(const EOS_Connect_LoginCallbackInfo* data)
+void OnlinePlatformEOS::OnConnectLoginComplete(const EOS_Connect_LoginCallbackInfo* data)
 {
     if (data->ResultCode == EOS_EResult::EOS_InvalidUser)
     {
+        LOG(Error, "EOS failed to connect login, creating user: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         EOS_Connect_CreateUserOptions options = {};
         options.ApiVersion = EOS_CONNECT_CREATEUSER_API_LATEST;
         options.ContinuanceToken = data->ContinuanceToken;
@@ -111,19 +110,22 @@ void OnlinePlatformEOS::OnLoginComplete(const EOS_Connect_LoginCallbackInfo* dat
     }
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
+        LOG(Error, "EOS failed to connect login: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         return;
     }
-    
-    _productUserIDs.AddUnique(data->LocalUserId);
+    _productUserId = data->LocalUserId;
+    //_productUserIDs.AddUnique(data->LocalUserId);
 }
 
 void OnlinePlatformEOS::OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data)
 {
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
+        LOG(Error, "EOS failed to create user: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         return;
     }
-    _productUserIDs.AddUnique(data->LocalUserId);
+    _productUserId = data->LocalUserId;
+    //_productUserIDs.AddUnique(data->LocalUserId);
 }
 
 void OnlinePlatformEOS::OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data)
@@ -160,9 +162,10 @@ void OnlinePlatformEOS::OnAuthLoginComplete(const EOS_Auth_LoginCallbackInfo* da
     }
     connectCreds.Token = idToken->JsonWebToken;
     connectLoginOptions.Credentials = &connectCreds;
-    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnLoginComplete);
+    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnConnectLoginComplete);
     EOS_Auth_IdToken_Release(idToken);
     _accountID = data->LocalUserId;
+    LOG(Info, "EOS auth login complete");
 }
 
 void OnlinePlatformEOS::OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCallbackInfo* data)
@@ -170,11 +173,32 @@ void OnlinePlatformEOS::OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCal
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
         LOG(Error, "EOS failed to query friends: {0}", String(EOS_EResult_ToString(data->ResultCode)));
-        _friendsQueryFailed = true;
         return;
     }
     
-    _friendsQueryComplete = true;
+    EOS_Friends_GetFriendsCountOptions countOptions = {};
+    countOptions.ApiVersion = EOS_FRIENDS_GETFRIENDSCOUNT_API_LATEST;
+    countOptions.LocalUserId = _accountID;
+    auto friendsCount = EOS_Friends_GetFriendsCount(_friendsInterface, &countOptions);
+    for (int i = 0; i < friendsCount; i++)
+    {
+        auto job = JobSystem::Dispatch([i](auto x)
+        {
+            EOS_Friends_GetFriendAtIndexOptions indexOptions = {};
+            indexOptions.ApiVersion = EOS_FRIENDS_GETFRIENDATINDEX_API_LATEST;
+            indexOptions.Index = i;
+            indexOptions.LocalUserId = _accountID;
+            auto friendsAccount = EOS_Friends_GetFriendAtIndex(_friendsInterface, &indexOptions);
+            
+            EOS_UserInfo_QueryUserInfoOptions queryUserOptions = {};
+            queryUserOptions.ApiVersion = EOS_USERINFO_QUERYUSERINFO_API_LATEST;
+            queryUserOptions.LocalUserId = _accountID;
+            queryUserOptions.TargetUserId = friendsAccount;
+            EOS_UserInfo_QueryUserInfo(_userInfoInterface, &queryUserOptions, nullptr, &OnlinePlatformEOS::OnQueryUserInfoComplete);
+        });
+        JobSystem::Wait(job);
+    }
+    LOG(Info, "EOS query friends complete. Friends found: {0}", friendsCount);
 }
 
 void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data)
@@ -182,11 +206,35 @@ void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfo
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
         LOG(Error, "EOS failed to query user info: {0}", String(EOS_EResult_ToString(data->ResultCode)));
-        _userInfoQueryFailed = true;
         return;
     }
 
-    _userInfoQueryComplete = true;
+    EOS_UserInfo_CopyUserInfoOptions copyUserOptions = {};
+    copyUserOptions.ApiVersion = EOS_USERINFO_COPYUSERINFO_API_LATEST;
+    copyUserOptions.LocalUserId = _accountID;
+    copyUserOptions.TargetUserId = data->TargetUserId;
+    EOS_UserInfo* friendInfo;
+    EOS_UserInfo_CopyUserInfo(_userInfoInterface, &copyUserOptions, &friendInfo);
+    OnlineUser friendOnlineUser;
+    char epicAccountIdString[EOS_EPICACCOUNTID_MAX_LENGTH + 1];
+    int32 epicAccountIdStringLength;
+    auto result = EOS_EpicAccountId_ToString(friendInfo->UserId, epicAccountIdString, &epicAccountIdStringLength);
+    if (result != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to convert EpicAccountId to string in query user info: {0}", String(EOS_EResult_ToString(result)));
+        return;
+    }
+    LOG(Info, "User found: {0}", *epicAccountIdString);
+}
+
+void OnlinePlatformEOS::OnQueryAchievementDefinitionsComplete(const EOS_Achievements_OnQueryDefinitionsCompleteCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to query achievement definitions: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+        return;
+    }
+    
 }
 
 OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
@@ -324,19 +372,7 @@ bool OnlinePlatformEOS::Initialize()
     }
     */
     
-    // Account portal auth
-    EOS_Auth_Credentials Credentials = {};
-    Credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
-    Credentials.Type = EOS_ELoginCredentialType::EOS_LCT_AccountPortal;
-
-    EOS_Auth_LoginOptions LoginOptions = {};
-    LoginOptions.ApiVersion = EOS_AUTH_LOGIN_API_LATEST;
-    LoginOptions.ScopeFlags = EOS_EAuthScopeFlags::EOS_AS_BasicProfile | EOS_EAuthScopeFlags::EOS_AS_FriendsList | EOS_EAuthScopeFlags::EOS_AS_Presence;
-    LoginOptions.Credentials = &Credentials;
-
-    EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
-
-    /*
+    
     // Create Device ID
     EOS_Connect_CreateDeviceIdOptions deviceIDOptions = {};
     deviceIDOptions.ApiVersion = EOS_CONNECT_CREATEDEVICEID_API_LATEST;
@@ -344,8 +380,7 @@ bool OnlinePlatformEOS::Initialize()
     const StringAsANSI<> deviceID(deviceIdentifier.Get(), deviceIdentifier.Length());
     deviceIDOptions.DeviceModel =  deviceID.Get();
     EOS_Connect_CreateDeviceId(_connectInterface, &deviceIDOptions, nullptr, &OnlinePlatformEOS::OnCreateDeviceIDComplete);
-    */
-    /*
+    
     // Initial login with device
     EOS_Connect_LoginOptions connectLoginOptions = {};
     connectLoginOptions.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
@@ -360,8 +395,7 @@ bool OnlinePlatformEOS::Initialize()
     const StringAsANSI<> displayName(Platform::GetComputerName().Get(), Platform::GetComputerName().Length());
     userLoginInfo.DisplayName = "Tom";//displayName.Get();
     connectLoginOptions.UserLoginInfo = &userLoginInfo;
-    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnLoginComplete);
-    */
+    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnConnectLoginComplete);
     
     //TODO: hook into changing EOS network status on game network status change
     Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
@@ -387,6 +421,18 @@ void OnlinePlatformEOS::Deinitialize()
 
 bool OnlinePlatformEOS::UserLogin(User* localUser)
 {
+    // Account portal auth
+    EOS_Auth_Credentials Credentials = {};
+    Credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
+    Credentials.Type = EOS_ELoginCredentialType::EOS_LCT_AccountPortal;
+
+    EOS_Auth_LoginOptions LoginOptions = {};
+    LoginOptions.ApiVersion = EOS_AUTH_LOGIN_API_LATEST;
+    LoginOptions.ScopeFlags = EOS_EAuthScopeFlags::EOS_AS_BasicProfile | EOS_EAuthScopeFlags::EOS_AS_FriendsList | EOS_EAuthScopeFlags::EOS_AS_Presence;
+    LoginOptions.Credentials = &Credentials;
+
+    EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
+
     return false;
 }
 
@@ -409,78 +455,51 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
 {
     if (!_platformInterface || !_accountID)
     {
-        LOG(Error, "Get Friends Failed 1");
+        LOG(Error, "EOS Get Friends Failed");
         return false;
     }
-    EOS_Friends_QueryFriendsOptions queryOptions = {};
-    queryOptions.ApiVersion = EOS_FRIENDS_QUERYFRIENDS_API_LATEST;
-    queryOptions.LocalUserId = _accountID;
-
-    EOS_Friends_QueryFriends(_friendsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryFriendsComplete);
-
-    // Wait for Query complete
-    while (!_friendsQueryComplete)
+    
+    auto job = JobSystem::Dispatch([](auto i)
     {
-        LOG(Error, "Querying friends");
-        if (_friendsQueryFailed)
-        {
-            _friendsQueryFailed = false;
-            return false;
-        }
-    }
-    _friendsQueryComplete = false;
-    EOS_Friends_GetFriendsCountOptions countOptions = {};
-    countOptions.ApiVersion = EOS_FRIENDS_GETFRIENDSCOUNT_API_LATEST;
-    countOptions.LocalUserId = _accountID;
-    auto friendsCount = EOS_Friends_GetFriendsCount(_friendsInterface, &countOptions);
-    for (int i = 0; i < friendsCount; i++)
-    {
-        EOS_Friends_GetFriendAtIndexOptions indexOptions = {};
-        indexOptions.ApiVersion = EOS_FRIENDS_GETFRIENDATINDEX_API_LATEST;
-        indexOptions.Index = i;
-        indexOptions.LocalUserId = _accountID;
-        auto friendsAccount = EOS_Friends_GetFriendAtIndex(_friendsInterface, &indexOptions);
+        EOS_Friends_QueryFriendsOptions queryOptions = {};
+        queryOptions.ApiVersion = EOS_FRIENDS_QUERYFRIENDS_API_LATEST;
+        queryOptions.LocalUserId = _accountID;
+        EOS_Friends_QueryFriends(_friendsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryFriendsComplete);
+    });
 
-        EOS_UserInfo_QueryUserInfoOptions queryUserOptions = {};
-        queryUserOptions.ApiVersion = EOS_USERINFO_QUERYUSERINFO_API_LATEST;
-        queryUserOptions.LocalUserId = _accountID;
-        queryUserOptions.TargetUserId = friendsAccount;
-        EOS_UserInfo_QueryUserInfo(_userInfoInterface, &queryUserOptions, nullptr, &OnlinePlatformEOS::OnQueryUserInfoComplete);
-        // Wait for Query complete
-        while (!_userInfoQueryComplete)
-        {
-            LOG(Error, "Querying friends info");
-            if (_userInfoQueryFailed)
-            {
-                _userInfoQueryFailed = false;
-                continue;
-            }
-        }
-        _userInfoQueryComplete = false;
-        EOS_UserInfo_CopyUserInfoOptions copyUserOptions = {};
-        copyUserOptions.ApiVersion = EOS_USERINFO_COPYUSERINFO_API_LATEST;
-        copyUserOptions.LocalUserId = _accountID;
-        copyUserOptions.TargetUserId = friendsAccount;
-        EOS_UserInfo* friendInfo;
-        EOS_UserInfo_CopyUserInfo(_userInfoInterface, &copyUserOptions, &friendInfo);
-        OnlineUser friendOnlineUser;
-        char epicAccountIdString[EOS_EPICACCOUNTID_MAX_LENGTH + 1];
-        int32 epicAccountIdStringLength;
-        auto result = EOS_EpicAccountId_ToString(friendInfo->UserId, epicAccountIdString, &epicAccountIdStringLength);
-        if (result != EOS_EResult::EOS_Success)
-        {
-            continue;
-        }
-        LOG(Info, "User found: {0}", *epicAccountIdString);
-        
-    }
-    LOG(Error, "Get Friends Done");
+    JobSystem::Wait(job);
+    LOG(Info, "Job System done waiting for friends");
     
     return false;
 }
 
 bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>& achievements, User* localUser)
 {
+    auto job = JobSystem::Dispatch([](auto i)
+    {
+        EOS_Achievements_QueryDefinitionsOptions queryOptions = {};
+        queryOptions.ApiVersion = EOS_ACHIEVEMENTS_QUERYDEFINITIONS_API_LATEST;
+        queryOptions.LocalUserId = _productUserId;
+        queryOptions.LocalUserId = nullptr;
+        queryOptions.HiddenAchievementIds_DEPRECATED = nullptr;
+        queryOptions.HiddenAchievementsCount_DEPRECATED = 0;
+        EOS_Achievements_QueryDefinitions(_achievementsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryAchievementDefinitionsComplete);
+    });
+    JobSystem::Wait(job);
+    EOS_Achievements_GetAchievementDefinitionCountOptions defCountOptions = {};
+    defCountOptions.ApiVersion = EOS_ACHIEVEMENTS_GETACHIEVEMENTDEFINITIONCOUNT_API_LATEST;
+    uint32 achievementCount = EOS_Achievements_GetAchievementDefinitionCount(_achievementsInterface, &defCountOptions);
+    
+    for (uint32 i = 0; i < achievementCount; i++)
+    {
+        EOS_Achievements_CopyAchievementDefinitionV2ByIndexOptions copyOptions = {};
+        copyOptions.ApiVersion = EOS_ACHIEVEMENTS_COPYACHIEVEMENTDEFINITIONV2BYINDEX_API_LATEST;
+        copyOptions.AchievementIndex = i;
+        EOS_Achievements_DefinitionV2* definition;
+        EOS_Achievements_CopyAchievementDefinitionV2ByIndex(_achievementsInterface, &copyOptions, &definition);
+        LOG(Info, "Achievement: {0}", *definition->AchievementId);
+    }
+    
     return false;
 }
 
@@ -530,7 +549,7 @@ void OnlinePlatformEOS::SetEOSLogLevel(EOSLogCategory logCategory, EOSLogLevel l
     EOS_EResult result = EOS_Logging_SetLogLevel(category, level);
     if (result != EOS_EResult::EOS_Success)
     {
-        LOG(Warning, "EOS failed to set logging level. Error: {1}", String(EOS_EResult_ToString(result)));
+        LOG(Warning, "EOS failed to set logging level. Error: {0}", String(EOS_EResult_ToString(result)));
     }
 }
 
