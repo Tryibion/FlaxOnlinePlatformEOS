@@ -46,6 +46,7 @@ Thumbs.db
 *.lib
 *.sbr
 /Source/obj/
+/Source/Properties/launchSettings.json
 _ReSharper*/
 [Tt]est[Rr]esult*
 .vs/

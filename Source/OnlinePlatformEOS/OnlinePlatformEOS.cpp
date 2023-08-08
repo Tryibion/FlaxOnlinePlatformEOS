@@ -78,10 +78,16 @@ void* Realloc(void* ptr, uint64 newSize, uint64 alignment)
     }
     if (!ptr)
         return Allocator::Allocate(newSize, alignment);
-    void* result = Allocator::Allocate(newSize * 2, alignment);
+    return _aligned_realloc(ptr, newSize, alignment);
+   
+    uint64 oldSize = sizeof(ptr);
+    //uint64 oldSize = _msize(ptr);
+    if (newSize <= oldSize)
+        return ptr;
+    void* result = Allocator::Allocate(newSize, alignment);
     if (result)
     {
-        Platform::MemoryCopy(result, ptr, newSize);
+        Platform::MemoryCopy(result, ptr, oldSize);
         Allocator::Free(ptr);
     }
     return result;
@@ -90,7 +96,7 @@ void* Realloc(void* ptr, uint64 newSize, uint64 alignment)
 
 extern "C" void* EOS_MEMORY_CALL EOSReallocateMemory(void* pointer, size_t sizeInBytes, size_t alignment)
 {
-    return Realloc(pointer, sizeInBytes, alignment); // TODO: if this ever gets put in engine, use that function
+    return Realloc(pointer, sizeInBytes, alignment);
 }
 
 extern "C" void EOS_MEMORY_CALL EOSReleaseMemory(void* pointer)
@@ -106,7 +112,8 @@ void OnlinePlatformEOS::OnConnectLoginComplete(const EOS_Connect_LoginCallbackIn
         EOS_Connect_CreateUserOptions options = {};
         options.ApiVersion = EOS_CONNECT_CREATEUSER_API_LATEST;
         options.ContinuanceToken = data->ContinuanceToken;
-        EOS_Connect_CreateUser(_connectInterface, &options, nullptr, &OnlinePlatformEOS::OnCreateUserComplete);
+        EOS_Connect_CreateUser(_connectInterface, &options, nullptr, &OnlinePlatformEOS::OnConnectCreateUserComplete);
+        return;
     }
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
@@ -114,10 +121,11 @@ void OnlinePlatformEOS::OnConnectLoginComplete(const EOS_Connect_LoginCallbackIn
         return;
     }
     _productUserId = data->LocalUserId;
+    LOG(Info, "EOS connect login complete");
     //_productUserIDs.AddUnique(data->LocalUserId);
 }
 
-void OnlinePlatformEOS::OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data)
+void OnlinePlatformEOS::OnConnectCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data)
 {
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
@@ -139,6 +147,38 @@ void OnlinePlatformEOS::OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceI
 
 void OnlinePlatformEOS::OnAuthLoginComplete(const EOS_Auth_LoginCallbackInfo* data)
 {
+    if (data->ResultCode == EOS_EResult::EOS_Auth_InvalidToken)
+    {
+        EOS_Auth_DeletePersistentAuthOptions deleteAuthOptions = {};
+        deleteAuthOptions.ApiVersion = EOS_AUTH_DELETEPERSISTENTAUTH_API_LATEST;
+        EOS_Auth_CopyIdTokenOptions idCopyOptions = {};
+        idCopyOptions.ApiVersion = EOS_AUTH_COPYIDTOKEN_API_LATEST;
+        idCopyOptions.AccountId = data->LocalUserId;
+        EOS_Auth_IdToken* idToken;
+        auto result = EOS_Auth_CopyIdToken(_authInterface, &idCopyOptions, &idToken);
+        if (result != EOS_EResult::EOS_Success)
+        {
+            LOG(Error, "EOS failed connect via auth login: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+            return;
+        }
+        deleteAuthOptions.RefreshToken = idToken->JsonWebToken;
+        EOS_Auth_DeletePersistentAuth(_authInterface, &deleteAuthOptions, nullptr, nullptr);
+
+        EOS_Auth_Credentials credentials = {};
+        credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
+        credentials.Type = EOS_ELoginCredentialType::EOS_LCT_AccountPortal;
+        credentials.Id = nullptr;
+        credentials.Token = nullptr;
+
+        EOS_Auth_LoginOptions LoginOptions = {};
+        LoginOptions.ApiVersion = EOS_AUTH_LOGIN_API_LATEST;
+        LoginOptions.ScopeFlags = EOS_EAuthScopeFlags::EOS_AS_BasicProfile | EOS_EAuthScopeFlags::EOS_AS_FriendsList | EOS_EAuthScopeFlags::EOS_AS_Presence;
+        LoginOptions.Credentials = &credentials;
+
+        EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
+        return;
+    }
+
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
         LOG(Error, "EOS failed to auth login: {0}", String(EOS_EResult_ToString(data->ResultCode)));
@@ -234,7 +274,15 @@ void OnlinePlatformEOS::OnQueryAchievementDefinitionsComplete(const EOS_Achievem
         LOG(Error, "EOS failed to query achievement definitions: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         return;
     }
-    
+}
+
+void OnlinePlatformEOS::OnQueryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to query player achievements: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+        return;
+    }
 }
 
 OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
@@ -257,9 +305,9 @@ bool OnlinePlatformEOS::Initialize()
     initOptions.Reserved = nullptr;
     initOptions.ProductName = settings->ProductName.Get();
     initOptions.ProductVersion = settings->ProductVersion.Get();
-    initOptions.AllocateMemoryFunction = nullptr;//&EOSAllocateMemory;
-    initOptions.ReallocateMemoryFunction = nullptr;// &EOSReallocateMemory;
-    initOptions.ReleaseMemoryFunction = nullptr; //&EOSReleaseMemory;
+    initOptions.AllocateMemoryFunction = &EOSAllocateMemory;
+    initOptions.ReallocateMemoryFunction = &EOSReallocateMemory;
+    initOptions.ReleaseMemoryFunction = &EOSReleaseMemory;
     initOptions.SystemInitializeOptions = nullptr;
     initOptions.OverrideThreadAffinity = nullptr;
 
@@ -328,7 +376,58 @@ bool OnlinePlatformEOS::Initialize()
     _playerDataStorageInterface = EOS_Platform_GetPlayerDataStorageInterface(_platformInterface);
     
     _productUserIDs.Clear();
+    
     /*
+    // Create Device ID
+    EOS_Connect_CreateDeviceIdOptions deviceIDOptions = {};
+    deviceIDOptions.ApiVersion = EOS_CONNECT_CREATEDEVICEID_API_LATEST;
+    auto deviceIdentifier = String::Format(TEXT("{0} {1} {2}"), ScriptingEnum::ToString<PlatformType>(Platform::GetPlatformType()), Platform::GetComputerName(), Platform::GetUniqueDeviceId().ToString());
+    const StringAsANSI<> deviceID(deviceIdentifier.Get(), deviceIdentifier.Length());
+    deviceIDOptions.DeviceModel =  deviceID.Get();
+    EOS_Connect_CreateDeviceId(_connectInterface, &deviceIDOptions, nullptr, &OnlinePlatformEOS::OnCreateDeviceIDComplete);
+    
+    // Initial login with device
+    EOS_Connect_LoginOptions connectLoginOptions = {};
+    connectLoginOptions.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
+    EOS_Connect_Credentials connectCreds = {};
+    connectCreds.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
+    connectCreds.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
+    //connectCreds.Token = "jwt token"; // TODO: figure out how to get this...
+    connectCreds.Token = nullptr;
+    connectLoginOptions.Credentials = &connectCreds;
+    EOS_Connect_UserLoginInfo userLoginInfo = {};
+    userLoginInfo.ApiVersion = EOS_CONNECT_USERLOGININFO_API_LATEST;
+    const StringAsANSI<> displayName(Platform::GetComputerName().Get(), Platform::GetComputerName().Length());
+    userLoginInfo.DisplayName = "Tom";//displayName.Get();
+    connectLoginOptions.UserLoginInfo = &userLoginInfo;
+    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnConnectLoginComplete);
+    */
+    
+    //TODO: hook into changing EOS network status on game network status change
+    Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
+    return false;
+}
+
+void OnlinePlatformEOS::Deinitialize()
+{
+    Engine::LateUpdate.Unbind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
+    _productUserIDs.Clear();
+    _platformInterface = nullptr;
+    _userInfoInterface = nullptr;
+    _authInterface = nullptr;
+    _achievementsInterface = nullptr;
+    _statsInterface = nullptr;
+    _friendsInterface = nullptr;
+    _connectInterface = nullptr;
+    _leaderboardsInterface = nullptr;
+    _playerDataStorageInterface = nullptr;
+    EOS_Platform_Release(_platformInterface);
+    EOS_Shutdown();
+}
+
+bool OnlinePlatformEOS::UserLogin(User* localUser)
+{
+
     // Let Epic Launcher pass auth
     if (!Engine::GetCommandLine().IsEmpty())
     {
@@ -368,60 +467,11 @@ bool OnlinePlatformEOS::Initialize()
             LoginOptions.Credentials = &Credentials;
 
             EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
+            return false;
         }
     }
-    */
-    
-    
-    // Create Device ID
-    EOS_Connect_CreateDeviceIdOptions deviceIDOptions = {};
-    deviceIDOptions.ApiVersion = EOS_CONNECT_CREATEDEVICEID_API_LATEST;
-    auto deviceIdentifier = String::Format(TEXT("{0} {1} {2}"), ScriptingEnum::ToString<PlatformType>(Platform::GetPlatformType()), Platform::GetComputerName(), Platform::GetUniqueDeviceId().ToString());
-    const StringAsANSI<> deviceID(deviceIdentifier.Get(), deviceIdentifier.Length());
-    deviceIDOptions.DeviceModel =  deviceID.Get();
-    EOS_Connect_CreateDeviceId(_connectInterface, &deviceIDOptions, nullptr, &OnlinePlatformEOS::OnCreateDeviceIDComplete);
-    
-    // Initial login with device
-    EOS_Connect_LoginOptions connectLoginOptions = {};
-    connectLoginOptions.ApiVersion = EOS_CONNECT_LOGIN_API_LATEST;
-    EOS_Connect_Credentials connectCreds = {};
-    connectCreds.ApiVersion = EOS_CONNECT_CREDENTIALS_API_LATEST;
-    connectCreds.Type = EOS_EExternalCredentialType::EOS_ECT_DEVICEID_ACCESS_TOKEN;
-    //connectCreds.Token = "jwt token"; // TODO: figure out how to get this...
-    connectCreds.Token = nullptr;
-    connectLoginOptions.Credentials = &connectCreds;
-    EOS_Connect_UserLoginInfo userLoginInfo = {};
-    userLoginInfo.ApiVersion = EOS_CONNECT_USERLOGININFO_API_LATEST;
-    const StringAsANSI<> displayName(Platform::GetComputerName().Get(), Platform::GetComputerName().Length());
-    userLoginInfo.DisplayName = "Tom";//displayName.Get();
-    connectLoginOptions.UserLoginInfo = &userLoginInfo;
-    EOS_Connect_Login(_connectInterface, &connectLoginOptions, nullptr, &OnlinePlatformEOS::OnConnectLoginComplete);
-    
-    //TODO: hook into changing EOS network status on game network status change
-    Engine::LateUpdate.Bind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
-    return false;
-}
-
-void OnlinePlatformEOS::Deinitialize()
-{
-    Engine::LateUpdate.Unbind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
-    _productUserIDs.Clear();
-    _platformInterface = nullptr;
-    _userInfoInterface = nullptr;
-    _authInterface = nullptr;
-    _achievementsInterface = nullptr;
-    _statsInterface = nullptr;
-    _friendsInterface = nullptr;
-    _connectInterface = nullptr;
-    _leaderboardsInterface = nullptr;
-    _playerDataStorageInterface = nullptr;
-    EOS_Platform_Release(_platformInterface);
-    EOS_Shutdown();
-}
-
-bool OnlinePlatformEOS::UserLogin(User* localUser)
-{
     // Account portal auth
+    /*
     EOS_Auth_Credentials Credentials = {};
     Credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
     Credentials.Type = EOS_ELoginCredentialType::EOS_LCT_AccountPortal;
@@ -430,6 +480,18 @@ bool OnlinePlatformEOS::UserLogin(User* localUser)
     LoginOptions.ApiVersion = EOS_AUTH_LOGIN_API_LATEST;
     LoginOptions.ScopeFlags = EOS_EAuthScopeFlags::EOS_AS_BasicProfile | EOS_EAuthScopeFlags::EOS_AS_FriendsList | EOS_EAuthScopeFlags::EOS_AS_Presence;
     LoginOptions.Credentials = &Credentials;
+*/
+    // Persistent Auth
+    EOS_Auth_Credentials credentials = {};
+    credentials.ApiVersion = EOS_AUTH_CREDENTIALS_API_LATEST;
+    credentials.Type = EOS_ELoginCredentialType::EOS_LCT_PersistentAuth;
+    credentials.Id = nullptr;
+    credentials.Token = nullptr;
+
+    EOS_Auth_LoginOptions LoginOptions = {};
+    LoginOptions.ApiVersion = EOS_AUTH_LOGIN_API_LATEST;
+    LoginOptions.ScopeFlags = EOS_EAuthScopeFlags::EOS_AS_BasicProfile | EOS_EAuthScopeFlags::EOS_AS_FriendsList | EOS_EAuthScopeFlags::EOS_AS_Presence;
+    LoginOptions.Credentials = &credentials;
 
     EOS_Auth_Login(_authInterface, &LoginOptions, nullptr, &OnlinePlatformEOS::OnAuthLoginComplete);
 
@@ -475,17 +537,9 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
 
 bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>& achievements, User* localUser)
 {
-    auto job = JobSystem::Dispatch([](auto i)
-    {
-        EOS_Achievements_QueryDefinitionsOptions queryOptions = {};
-        queryOptions.ApiVersion = EOS_ACHIEVEMENTS_QUERYDEFINITIONS_API_LATEST;
-        queryOptions.LocalUserId = _productUserId;
-        queryOptions.LocalUserId = nullptr;
-        queryOptions.HiddenAchievementIds_DEPRECATED = nullptr;
-        queryOptions.HiddenAchievementsCount_DEPRECATED = 0;
-        EOS_Achievements_QueryDefinitions(_achievementsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryAchievementDefinitionsComplete);
-    });
-    JobSystem::Wait(job);
+    // Query achievement definitions
+    QueryAchievementDefinitions();
+    /*
     EOS_Achievements_GetAchievementDefinitionCountOptions defCountOptions = {};
     defCountOptions.ApiVersion = EOS_ACHIEVEMENTS_GETACHIEVEMENTDEFINITIONCOUNT_API_LATEST;
     uint32 achievementCount = EOS_Achievements_GetAchievementDefinitionCount(_achievementsInterface, &defCountOptions);
@@ -497,7 +551,44 @@ bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>
         copyOptions.AchievementIndex = i;
         EOS_Achievements_DefinitionV2* definition;
         EOS_Achievements_CopyAchievementDefinitionV2ByIndex(_achievementsInterface, &copyOptions, &definition);
-        LOG(Info, "Achievement: {0}", *definition->AchievementId);
+        LOG(Info, "Achievement: {0}", String(definition->AchievementId));
+    
+        EOS_Achievements_DefinitionV2_Release(definition);
+    }
+    */
+    // Query Player achievements
+    QueryPlayerAchievements();
+    
+    EOS_Achievements_GetPlayerAchievementCountOptions options = {};
+    options.ApiVersion = EOS_ACHIEVEMENTS_GETPLAYERACHIEVEMENTCOUNT_API_LATEST;
+    options.UserId = _productUserId;
+    uint32 count = EOS_Achievements_GetPlayerAchievementCount(_achievementsInterface, &options);
+    
+    for (uint32 i = 0; i < count; i++)
+    {
+        EOS_Achievements_CopyPlayerAchievementByIndexOptions copyOptions = {};
+        copyOptions.ApiVersion = EOS_ACHIEVEMENTS_COPYPLAYERACHIEVEMENTBYINDEX_API_LATEST;
+        copyOptions.AchievementIndex = i;
+        copyOptions.LocalUserId = _productUserId;
+        copyOptions.TargetUserId = _productUserId;
+        EOS_Achievements_PlayerAchievement* eosAchievement = {};
+        EOS_Achievements_CopyPlayerAchievementByIndex(_achievementsInterface, &copyOptions, &eosAchievement);
+        
+        OnlineAchievement achievement;
+        achievement.Name = String(eosAchievement->DisplayName);
+        achievement.Description = String(eosAchievement->Description);
+        achievement.Progress = (float)eosAchievement->Progress;
+        achievement.UnlockTime = DateTime(eosAchievement->UnlockTime);
+        achievement.Identifier = String(eosAchievement->AchievementId);
+        achievements.Add(achievement);
+        LOG(Info, "Achievement: {0}", achievement.Name);
+
+        EOS_Achievements_PlayerAchievement_Release(eosAchievement);
+    }
+    
+    if (count > 0 && achievements.Count() > 0)
+    {
+        return true;
     }
     
     return false;
@@ -584,4 +675,31 @@ void OnlinePlatformEOS::OnUpdate()
 {
     EOS_Platform_Tick(_platformInterface);
     CheckApplicationStatus();
+}
+
+void OnlinePlatformEOS::QueryAchievementDefinitions()
+{
+    auto job = JobSystem::Dispatch([](auto i)
+    {
+        EOS_Achievements_QueryDefinitionsOptions queryOptions = {};
+        queryOptions.ApiVersion = EOS_ACHIEVEMENTS_QUERYDEFINITIONS_API_LATEST;
+        queryOptions.LocalUserId = _productUserId;
+        queryOptions.HiddenAchievementIds_DEPRECATED = nullptr;
+        queryOptions.HiddenAchievementsCount_DEPRECATED = 0;
+        EOS_Achievements_QueryDefinitions(_achievementsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryAchievementDefinitionsComplete);
+    });
+    JobSystem::Wait(job);
+}
+
+void OnlinePlatformEOS::QueryPlayerAchievements()
+{
+    auto job = JobSystem::Dispatch([](auto i)
+    {
+        EOS_Achievements_QueryPlayerAchievementsOptions queryOptions = {};
+        queryOptions.ApiVersion = EOS_ACHIEVEMENTS_QUERYPLAYERACHIEVEMENTS_API_LATEST;
+        queryOptions.LocalUserId = _productUserId;
+        queryOptions.TargetUserId = _productUserId;
+        EOS_Achievements_QueryPlayerAchievements(_achievementsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryPlayerAchievementsComplete);
+    });
+    JobSystem::Wait(job);
 }

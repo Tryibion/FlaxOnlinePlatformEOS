@@ -112,11 +112,6 @@ API_CLASS(Namespace="FlaxEngine.Online.EOS") class ONLINEPLATFORMEOS_API EOSSett
 	DECLARE_SCRIPTING_TYPE_NO_SPAWN(EOSSettings);
 	DECLARE_SETTINGS_GETTER(EOSSettings);
 public:
-	/* TODO: may need this for steam interaction at some point
-	// App ID of the game.
-	API_FIELD(Attributes="EditorOrder(0)")
-	uint32 AppId = 0;
-	*/
 	API_FIELD() StringAnsi ProductName;
 	API_FIELD() StringAnsi ProductVersion;
 	API_FIELD() StringAnsi ProductID;
@@ -173,11 +168,16 @@ public:
 private:
     bool RequestCurrentStats();
     void OnUpdate();
+	void QueryAchievementDefinitions();
+	void QueryPlayerAchievements();
+
+	// Callbacks
 	static void EOS_CALL OnConnectLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
-	static void EOS_CALL OnCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data);
+	static void EOS_CALL OnConnectCreateUserComplete(const EOS_Connect_CreateUserCallbackInfo* data);
 	static void EOS_CALL OnCreateDeviceIDComplete(const EOS_Connect_CreateDeviceIdCallbackInfo* data);
 	static void EOS_CALL OnAuthLoginComplete(const EOS_Auth_LoginCallbackInfo* data);
 	static void EOS_CALL OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCallbackInfo* data);
 	static void EOS_CALL OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data);
 	static void EOS_CALL OnQueryAchievementDefinitionsComplete(const EOS_Achievements_OnQueryDefinitionsCompleteCallbackInfo* data);
+	static void EOS_CALL OnQueryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallbackInfo* data);
 };
