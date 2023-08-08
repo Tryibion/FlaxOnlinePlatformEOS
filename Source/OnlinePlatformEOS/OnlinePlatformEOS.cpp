@@ -285,6 +285,15 @@ void OnlinePlatformEOS::OnQueryPlayerAchievementsComplete(const EOS_Achievements
     }
 }
 
+void OnlinePlatformEOS::OnUnlockAchievementsComplete(const EOS_Achievements_OnUnlockAchievementsCompleteCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to unlock achievements: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+        return;
+    }
+}
+
 OnlinePlatformEOS::OnlinePlatformEOS(const SpawnParams& params)
     : ScriptingObject(params)
 {
@@ -537,6 +546,9 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
 
 bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>& achievements, User* localUser)
 {
+    if (!_platformInterface || !_productUserId)
+        return false;
+    
     // Query achievement definitions
     QueryAchievementDefinitions();
     /*
@@ -573,6 +585,12 @@ bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>
         copyOptions.TargetUserId = _productUserId;
         EOS_Achievements_PlayerAchievement* eosAchievement = {};
         EOS_Achievements_CopyPlayerAchievementByIndex(_achievementsInterface, &copyOptions, &eosAchievement);
+
+        EOS_Achievements_CopyAchievementDefinitionV2ByAchievementIdOptions copyDefinitionOptions = {};
+        copyDefinitionOptions.ApiVersion = EOS_ACHIEVEMENTS_COPYACHIEVEMENTDEFINITIONV2BYACHIEVEMENTID_API_LATEST;
+        copyDefinitionOptions.AchievementId = eosAchievement->AchievementId;
+        EOS_Achievements_DefinitionV2* definition;
+        EOS_Achievements_CopyAchievementDefinitionV2ByAchievementId(_achievementsInterface, &copyDefinitionOptions, &definition);
         
         OnlineAchievement achievement;
         achievement.Name = String(eosAchievement->DisplayName);
@@ -580,9 +598,10 @@ bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>
         achievement.Progress = (float)eosAchievement->Progress;
         achievement.UnlockTime = DateTime(eosAchievement->UnlockTime);
         achievement.Identifier = String(eosAchievement->AchievementId);
+        achievement.IsHidden = definition->bIsHidden;
         achievements.Add(achievement);
-        LOG(Info, "Achievement: {0}", achievement.Name);
 
+        EOS_Achievements_DefinitionV2_Release(definition);
         EOS_Achievements_PlayerAchievement_Release(eosAchievement);
     }
     
@@ -596,6 +615,15 @@ bool OnlinePlatformEOS::GetAchievements(Array<OnlineAchievement, HeapAllocation>
 
 bool OnlinePlatformEOS::UnlockAchievement(const StringView& name, User* localUser)
 {
+    EOS_Achievements_UnlockAchievementsOptions options = {};
+    options.ApiVersion = EOS_ACHIEVEMENTS_UNLOCKACHIEVEMENTS_API_LATEST;
+    options.UserId = _productUserId;
+    const StringAsANSI<> charName(name.Get(), name.Length());
+    const char* ids[1] = {charName.Get()};
+    options.AchievementIds = ids;
+    options.AchievementsCount = 1;
+    EOS_Achievements_UnlockAchievements(_achievementsInterface, &options, nullptr, &OnlinePlatformEOS::OnUnlockAchievementsComplete);
+    
     return false;
 }
 

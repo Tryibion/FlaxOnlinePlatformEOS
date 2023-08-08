@@ -180,4 +180,5 @@ private:
 	static void EOS_CALL OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data);
 	static void EOS_CALL OnQueryAchievementDefinitionsComplete(const EOS_Achievements_OnQueryDefinitionsCompleteCallbackInfo* data);
 	static void EOS_CALL OnQueryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallbackInfo* data);
+	static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnlockAchievementsCompleteCallbackInfo* data);
 };
