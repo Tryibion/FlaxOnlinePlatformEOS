@@ -10,6 +10,7 @@
 #include "EOSSDK/Include/eos_friends_types.h"
 #include "EOSSDK/Include/eos_leaderboards_types.h"
 #include "EOSSDK/Include/eos_playerdatastorage_types.h"
+#include "EOSSDK/Include/eos_presence_types.h"
 #include "EOSSDK/Include/eos_stats_types.h"
 #include "EOSSDK/Include/eos_types.h"
 #include "EOSSDK/Include/eos_userinfo_types.h"
@@ -132,6 +133,7 @@ API_CLASS(Sealed, Namespace="FlaxEngine.Online.EOS") class ONLINEPLATFORMEOS_API
 private:
 	static EOS_HPlatform _platformInterface;
 	static EOS_HUserInfo _userInfoInterface;
+	static EOS_HPresence _presenceInterface;
 	static EOS_HAuth _authInterface;
 	static EOS_HAchievements _achievementsInterface;
 	static EOS_HStats _statsInterface;
@@ -172,6 +174,8 @@ private:
 	static void QueryAchievementDefinitions();
 	static void QueryPlayerAchievements();
 	static void QueryFriends();
+	static void QueryAllStats();
+	static OnlinePresenceStates ConvertPresenceStatus(EOS_Presence_EStatus status);
 
 	// Callbacks
 	static void EOS_CALL OnConnectLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
@@ -183,4 +187,6 @@ private:
 	static void EOS_CALL OnQueryAchievementDefinitionsComplete(const EOS_Achievements_OnQueryDefinitionsCompleteCallbackInfo* data);
 	static void EOS_CALL OnQueryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallbackInfo* data);
 	static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnlockAchievementsCompleteCallbackInfo* data);
+	static void EOS_CALL OnQueryStatsComplete(const EOS_Stats_OnQueryStatsCompleteCallbackInfo* data);
+	static void EOS_CALL OnQueryPresenceComplete(const EOS_Presence_QueryPresenceCallbackInfo* data);
 };

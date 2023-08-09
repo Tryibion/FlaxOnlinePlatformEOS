@@ -23,6 +23,8 @@
 #include "EOSSDK/Include/eos_auth.h"
 #include "EOSSDK/Include/eos_friends.h"
 #include "EOSSDK/Include/eos_logging.h"
+#include "EOSSDK/Include/eos_presence.h"
+#include "EOSSDK/Include/eos_stats.h"
 #include "EOSSDK/Include/eos_types.h"
 #include "EOSSDK/Include/eos_ui.h"
 #include "EOSSDK/Include/eos_userinfo.h"
@@ -30,6 +32,7 @@
 IMPLEMENT_GAME_SETTINGS_GETTER(EOSSettings, "EOS");
 EOS_HPlatform OnlinePlatformEOS::_platformInterface = nullptr;
 EOS_HUserInfo OnlinePlatformEOS::_userInfoInterface = nullptr;
+EOS_HPresence OnlinePlatformEOS::_presenceInterface = nullptr;
 EOS_HAuth OnlinePlatformEOS::_authInterface = nullptr;
 EOS_HAchievements OnlinePlatformEOS::_achievementsInterface = nullptr;
 EOS_HStats OnlinePlatformEOS::_statsInterface = nullptr;
@@ -62,7 +65,6 @@ extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
         break;
     default: break;
     }
-    
 }
 
 extern "C" void* EOS_MEMORY_CALL EOSAllocateMemory(size_t sizeInBytes, size_t alignment)
@@ -80,18 +82,6 @@ void* Realloc(void* ptr, uint64 newSize, uint64 alignment)
     if (!ptr)
         return Allocator::Allocate(newSize, alignment);
     return _aligned_realloc(ptr, newSize, alignment);
-   
-    uint64 oldSize = sizeof(ptr);
-    //uint64 oldSize = _msize(ptr);
-    if (newSize <= oldSize)
-        return ptr;
-    void* result = Allocator::Allocate(newSize, alignment);
-    if (result)
-    {
-        Platform::MemoryCopy(result, ptr, oldSize);
-        Allocator::Free(ptr);
-    }
-    return result;
 }
 
 
@@ -248,6 +238,36 @@ void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfo
         return;
     }
     Guid::Parse(String(epicAccountIdString), friendOnlineUser.Id);
+
+    auto job = JobSystem::Dispatch([](auto i)
+    {
+        EOS_Presence_QueryPresenceOptions presenceQueryOptions = {};
+        presenceQueryOptions.ApiVersion = EOS_PRESENCE_QUERYPRESENCE_API_LATEST;
+        presenceQueryOptions.LocalUserId = data->LocalUserId;
+        presenceQueryOptions.TargetUserId = data->TargetUserId;
+        EOS_Presence_QueryPresence(_presenceInterface, &presenceQueryOptions, nullptr, &OnlinePlatformEOS::OnQueryPresenceComplete);
+    });
+    JobSystem::Wait(job);
+
+    EOS_Presence_HasPresenceOptions hasPresenceOptions = {};
+    hasPresenceOptions.ApiVersion = EOS_PRESENCE_HASPRESENCE_API_LATEST;
+    hasPresenceOptions.LocalUserId = data->LocalUserId;
+    hasPresenceOptions.TargetUserId = data->TargetUserId;
+
+    EOS_Bool hasPresence = EOS_Presence_HasPresence(_presenceInterface, &hasPresenceOptions);
+
+    if (hasPresence == EOS_TRUE)
+    {
+        EOS_Presence_CopyPresenceOptions copyPresenceOptions = {};
+        copyPresenceOptions.ApiVersion = EOS_PRESENCE_COPYPRESENCE_API_LATEST;
+        copyPresenceOptions.LocalUserId = data->LocalUserId;
+        copyPresenceOptions.TargetUserId = data->TargetUserId;
+        EOS_Presence_Info* presenceInfo;
+        EOS_Presence_CopyPresence(_presenceInterface, &copyPresenceOptions, &presenceInfo);
+        friendOnlineUser.PresenceState = ConvertPresenceStatus(presenceInfo->Status);
+        EOS_Presence_Info_Release(presenceInfo);
+    }
+    
     _tempFriendsList.Add(friendOnlineUser);
     EOS_UserInfo_Release(friendInfo);
 }
@@ -275,6 +295,19 @@ void OnlinePlatformEOS::OnUnlockAchievementsComplete(const EOS_Achievements_OnUn
     if (data->ResultCode != EOS_EResult::EOS_Success)
     {
         LOG(Error, "EOS failed to unlock achievements: {0}", String(EOS_EResult_ToString(data->ResultCode)));
+        return;
+    }
+}
+
+void OnlinePlatformEOS::OnQueryStatsComplete(const EOS_Stats_OnQueryStatsCompleteCallbackInfo* data)
+{
+}
+
+void OnlinePlatformEOS::OnQueryPresenceComplete(const EOS_Presence_QueryPresenceCallbackInfo* data)
+{
+    if (data->ResultCode != EOS_EResult::EOS_Success)
+    {
+        LOG(Error, "EOS failed to find presence: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         return;
     }
 }
@@ -368,6 +401,7 @@ bool OnlinePlatformEOS::Initialize()
     _friendsInterface = EOS_Platform_GetFriendsInterface(_platformInterface);
     _leaderboardsInterface = EOS_Platform_GetLeaderboardsInterface(_platformInterface);
     _playerDataStorageInterface = EOS_Platform_GetPlayerDataStorageInterface(_platformInterface);
+    _presenceInterface = EOS_Platform_GetPresenceInterface(_platformInterface);
     
     _productUserIDs.Clear();
     _tempFriendsList.Clear();
@@ -407,7 +441,6 @@ void OnlinePlatformEOS::Deinitialize()
 {
     Engine::LateUpdate.Unbind<OnlinePlatformEOS, &OnlinePlatformEOS::OnUpdate>(this);
     _productUserIDs.Clear();
-    _platformInterface = nullptr;
     _userInfoInterface = nullptr;
     _authInterface = nullptr;
     _achievementsInterface = nullptr;
@@ -416,7 +449,9 @@ void OnlinePlatformEOS::Deinitialize()
     _connectInterface = nullptr;
     _leaderboardsInterface = nullptr;
     _playerDataStorageInterface = nullptr;
+    _presenceInterface = nullptr;
     EOS_Platform_Release(_platformInterface);
+    _platformInterface = nullptr;
     EOS_Shutdown();
 }
 
@@ -524,7 +559,7 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
     auto friendsCount = EOS_Friends_GetFriendsCount(_friendsInterface, &countOptions);
     for (int i = 0; i < friendsCount; i++)
     {
-        auto job = JobSystem::Dispatch([i](auto x)
+        auto job = JobSystem::Dispatch([i, &friends](auto x)
         {
             EOS_Friends_GetFriendAtIndexOptions indexOptions = {};
             indexOptions.ApiVersion = EOS_FRIENDS_GETFRIENDATINDEX_API_LATEST;
@@ -725,11 +760,41 @@ void OnlinePlatformEOS::QueryPlayerAchievements()
 void OnlinePlatformEOS::QueryFriends()
 {
     auto job = JobSystem::Dispatch([](auto i)
-   {
-       EOS_Friends_QueryFriendsOptions queryOptions = {};
-       queryOptions.ApiVersion = EOS_FRIENDS_QUERYFRIENDS_API_LATEST;
-       queryOptions.LocalUserId = _accountID;
-       EOS_Friends_QueryFriends(_friendsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryFriendsComplete);
-   });
+    {
+        EOS_Friends_QueryFriendsOptions queryOptions = {};
+        queryOptions.ApiVersion = EOS_FRIENDS_QUERYFRIENDS_API_LATEST;
+        queryOptions.LocalUserId = _accountID;
+        EOS_Friends_QueryFriends(_friendsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryFriendsComplete);
+    });
     JobSystem::Wait(job);
+}
+
+void OnlinePlatformEOS::QueryAllStats()
+{
+    auto job = JobSystem::Dispatch([](auto i)
+    {
+        EOS_Stats_QueryStatsOptions queryOptions = {};
+        queryOptions.ApiVersion = EOS_STATS_QUERYSTATS_API_LATEST;
+        queryOptions.LocalUserId = _productUserId;
+        queryOptions.TargetUserId = _productUserId;
+        EOS_Stats_QueryStats(_statsInterface, &queryOptions, nullptr, &OnlinePlatformEOS::OnQueryStatsComplete);
+    });
+    JobSystem::Wait(job);
+}
+
+OnlinePresenceStates OnlinePlatformEOS::ConvertPresenceStatus(EOS_Presence_EStatus status)
+{
+    switch (status) {
+    case EOS_Presence_EStatus::EOS_PS_Offline:
+        return OnlinePresenceStates::Offline;
+    case EOS_Presence_EStatus::EOS_PS_Online:
+        return OnlinePresenceStates::Online;
+    case EOS_Presence_EStatus::EOS_PS_Away:
+    case EOS_Presence_EStatus::EOS_PS_ExtendedAway:
+        return OnlinePresenceStates::Away;
+    case EOS_Presence_EStatus::EOS_PS_DoNotDisturb:
+        return OnlinePresenceStates::Busy;
+    default: break;
+    }
+    return OnlinePresenceStates::Offline;
 }
