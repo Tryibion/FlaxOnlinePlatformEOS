@@ -1,6 +1,6 @@
 # WIP - EOS for Flax Engine
 
-This repository contains a plugin project for [Flax Engine](https://flaxengine.com/) games with [EOS](https://dev.epicgames.com/en-US/services) online platform implementation that covers: user profile, friends list, online presence, achevements, cloud savegames and more.
+This repository contains a plugin project for [Flax Engine](https://flaxengine.com/) games with [Epic Online Services (EOS)](https://dev.epicgames.com/en-US/services) online platform implementation that covers: user profile, friends list, online presence, achevements, cloud savegames and more.
 
 Minimum supported Flax version: `1.3`.
 
