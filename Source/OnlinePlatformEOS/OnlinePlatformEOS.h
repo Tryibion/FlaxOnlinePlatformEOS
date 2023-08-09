@@ -142,7 +142,7 @@ private:
     static Array<EOS_ProductUserId, HeapAllocation> _productUserIDs;
 	static EOS_ProductUserId _productUserId;
 	static EOS_EpicAccountId _accountID;
-	static Array<OnlineUser, HeapAllocation> _friendsList;
+	static Array<OnlineUser, HeapAllocation> _tempFriendsList;
 	
 public:
     // [IOnlinePlatform]

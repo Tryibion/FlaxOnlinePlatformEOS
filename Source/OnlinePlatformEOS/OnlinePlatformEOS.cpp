@@ -40,7 +40,7 @@ EOS_HPlayerDataStorage OnlinePlatformEOS::_playerDataStorageInterface = nullptr;
 EOS_EpicAccountId OnlinePlatformEOS::_accountID = nullptr;
 EOS_ProductUserId OnlinePlatformEOS::_productUserId = nullptr;
 Array<EOS_ProductUserId, HeapAllocation> OnlinePlatformEOS::_productUserIDs;
-Array<OnlineUser, HeapAllocation> OnlinePlatformEOS::_friendsList;
+Array<OnlineUser, HeapAllocation> OnlinePlatformEOS::_tempFriendsList;
 
 extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
 {
@@ -248,7 +248,7 @@ void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfo
         return;
     }
     Guid::Parse(String(epicAccountIdString), friendOnlineUser.Id);
-    _friendsList.Add(friendOnlineUser);
+    _tempFriendsList.Add(friendOnlineUser);
     EOS_UserInfo_Release(friendInfo);
 }
 
@@ -370,7 +370,7 @@ bool OnlinePlatformEOS::Initialize()
     _playerDataStorageInterface = EOS_Platform_GetPlayerDataStorageInterface(_platformInterface);
     
     _productUserIDs.Clear();
-    _friendsList.Clear();
+    _tempFriendsList.Clear();
     
     /*
     // Create Device ID
@@ -516,7 +516,7 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
         return false;
     }
 
-    _friendsList.Clear();
+    _tempFriendsList.Clear();
     QueryFriends();
     EOS_Friends_GetFriendsCountOptions countOptions = {};
     countOptions.ApiVersion = EOS_FRIENDS_GETFRIENDSCOUNT_API_LATEST;
@@ -541,8 +541,8 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
         JobSystem::Wait(job);
     }
     LOG(Info, "EOS query friends complete. Friends found: {0}", friendsCount);
-    friends = _friendsList;
-    _friendsList.Clear();
+    friends = _tempFriendsList;
+    _tempFriendsList.Clear();
     if (friendsCount > 0 && friends.Count() > 0)
     {
         return true;
