@@ -142,6 +142,7 @@ private:
     static Array<EOS_ProductUserId, HeapAllocation> _productUserIDs;
 	static EOS_ProductUserId _productUserId;
 	static EOS_EpicAccountId _accountID;
+	static Array<OnlineUser, HeapAllocation> _friendsList;
 	
 public:
     // [IOnlinePlatform]
@@ -168,8 +169,9 @@ public:
 private:
     bool RequestCurrentStats();
     void OnUpdate();
-	void QueryAchievementDefinitions();
-	void QueryPlayerAchievements();
+	static void QueryAchievementDefinitions();
+	static void QueryPlayerAchievements();
+	static void QueryFriends();
 
 	// Callbacks
 	static void EOS_CALL OnConnectLoginComplete(const EOS_Connect_LoginCallbackInfo* data);
