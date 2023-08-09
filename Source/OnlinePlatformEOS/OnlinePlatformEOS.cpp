@@ -45,23 +45,23 @@ EOS_ProductUserId OnlinePlatformEOS::_productUserId = nullptr;
 Array<EOS_ProductUserId, HeapAllocation> OnlinePlatformEOS::_productUserIDs;
 Array<OnlineUser, HeapAllocation> OnlinePlatformEOS::_tempFriendsList;
 
-extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* Message)
+extern "C" void EOS_CALL EOSSDKLogCallback(const EOS_LogMessage* message)
 {
-    switch (Message->Level)
+    switch (message->Level)
     {
     case EOS_ELogLevel::EOS_LOG_Fatal:
-        LOG(Fatal, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
+        LOG(Fatal, "[EOS] {0}: {1}", String(message->Category), String(message->Message));
         break;
     case EOS_ELogLevel::EOS_LOG_Error:
-        LOG(Error, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
+        LOG(Error, "[EOS] {0}: {1}", String(message->Category), String(message->Message));
         break;
     case EOS_ELogLevel::EOS_LOG_Warning:
-        LOG(Warning, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
+        LOG(Warning, "[EOS] {0}: {1}", String(message->Category), String(message->Message));
         break;
     case EOS_ELogLevel::EOS_LOG_Info:
     case EOS_ELogLevel::EOS_LOG_Verbose: 
     case EOS_ELogLevel::EOS_LOG_VeryVerbose:
-        LOG(Info, "[EOS] {0}: {1}", String(Message->Category), String(Message->Message));
+        LOG(Info, "[EOS] {0}: {1}", String(message->Category), String(message->Message));
         break;
     default: break;
     }
@@ -209,7 +209,6 @@ void OnlinePlatformEOS::OnQueryFriendsComplete(const EOS_Friends_QueryFriendsCal
         LOG(Error, "EOS failed to query friends: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         return;
     }
-    
 }
 
 void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfoCallbackInfo* data)
@@ -239,7 +238,7 @@ void OnlinePlatformEOS::OnQueryUserInfoComplete(const EOS_UserInfo_QueryUserInfo
     }
     Guid::Parse(String(epicAccountIdString), friendOnlineUser.Id);
 
-    auto job = JobSystem::Dispatch([](auto i)
+    auto job = JobSystem::Dispatch([data](auto i)
     {
         EOS_Presence_QueryPresenceOptions presenceQueryOptions = {};
         presenceQueryOptions.ApiVersion = EOS_PRESENCE_QUERYPRESENCE_API_LATEST;
@@ -559,7 +558,7 @@ bool OnlinePlatformEOS::GetFriends(Array<OnlineUser, HeapAllocation>& friends, U
     auto friendsCount = EOS_Friends_GetFriendsCount(_friendsInterface, &countOptions);
     for (int i = 0; i < friendsCount; i++)
     {
-        auto job = JobSystem::Dispatch([i, &friends](auto x)
+        auto job = JobSystem::Dispatch([i](auto x)
         {
             EOS_Friends_GetFriendAtIndexOptions indexOptions = {};
             indexOptions.ApiVersion = EOS_FRIENDS_GETFRIENDATINDEX_API_LATEST;
