@@ -14,6 +14,8 @@
 #include "Engine/Platform/File.h"
 #endif
 #include <EOSSDK/Include/eos_sdk.h>
+
+#include "Editor/Cooker/CookingData.h"
 #include "Engine/Engine/Time.h"
 #include "Engine/Platform/Base/UserBase.h"
 #include "Engine/Platform/Windows/WindowsWindow.h"
@@ -112,8 +114,9 @@ void OnlinePlatformEOS::OnConnectLoginComplete(const EOS_Connect_LoginCallbackIn
         return;
     }
     _productUserId = data->LocalUserId;
-    QueryPlayerAchievements();
+    
     QueryAchievementDefinitions();
+    QueryPlayerAchievements();
     LOG(Info, "EOS connect login complete");
     //_productUserIDs.AddUnique(data->LocalUserId);
 }
@@ -278,6 +281,7 @@ void OnlinePlatformEOS::OnQueryAchievementDefinitionsComplete(const EOS_Achievem
         LOG(Error, "EOS failed to query achievement definitions: {0}", String(EOS_EResult_ToString(data->ResultCode)));
         return;
     }
+    LOG(Info, "Achievments Finished");
 }
 
 void OnlinePlatformEOS::OnQueryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallbackInfo* data)
@@ -655,12 +659,12 @@ bool OnlinePlatformEOS::UnlockAchievementProgress(const StringView& name, float 
 {
     return false;
 }
-
+#if !BUILD_RELEASE
 bool OnlinePlatformEOS::ResetAchievements(User* localUser)
 {
     return false;
 }
-
+#endif
 bool OnlinePlatformEOS::GetStat(const StringView& name, float& value, User* localUser)
 {
     return false;
